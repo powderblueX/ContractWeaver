@@ -1,0 +1,11 @@
+fastapi>=0.104,<1
+uvicorn[standard]>=0.23,<1
+httpx>=0.25,<1
+pydantic[email]>=2.7,<3
+pydantic-settings>=2.3,<3
+python-docx>=1.1,<2
+bcrypt>=4,<6
+
+# Optional: enable local FAISS ranking by setting LAW_EMBEDDING_MODEL_PATH.
+# faiss-cpu>=1.10
+# sentence-transformers>=4
