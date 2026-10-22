@@ -1,0 +1,77 @@
+import { describe, expect, it, vi } from 'vitest'
+import { useContractWorkspace } from '../useContractWorkspace'
+import { contractApi } from '../contractApi'
+
+vi.mock('../contractApi', () => ({
+  contractApi: {
+    create: vi.fn(),
+    list: vi.fn(),
+    review: vi.fn(),
+    get: vi.fn(),
+    activity: vi.fn(),
+    analyze: vi.fn(),
+  },
+}))
+
+describe('workspace state', () => {
+  it('polls factual progress while a model request is pending and clears timers afterwards', async () => {
+    vi.useFakeTimers()
+    let resolve
+    const workflow = useContractWorkspace()
+    workflow.workspace.value = { id: 'live-task', revision: 1 }
+    contractApi.analyze.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    contractApi.activity.mockResolvedValue({
+      action: 'analyze',
+      status: 'running',
+      requests_started: 1,
+      responses_received: 0,
+    })
+    contractApi.list.mockResolvedValue([])
+    try {
+      const pending = workflow.analyze()
+      await vi.advanceTimersByTimeAsync(1100)
+      expect(workflow.busyAction.value).toContain('分析')
+      expect(workflow.elapsedSeconds.value).toBe(1)
+      expect(workflow.activity.value.requests_started).toBe(1)
+      resolve({
+        id: 'live-task',
+        revision: 2,
+        last_run: { action: 'analyze', status: 'completed', requests_started: 1, responses_received: 1 },
+      })
+      await pending
+      expect(workflow.busyAction.value).toBe('')
+      expect(workflow.activity.value.responses_received).toBe(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      workflow.reset()
+      vi.useRealTimers()
+    }
+  })
+  it('retains a committed change if refreshing the task list fails', async () => {
+    const workflow = useContractWorkspace()
+    const saved = { id: 'task-one', revision: 2, fields: [] }
+    contractApi.create.mockResolvedValue(saved)
+    contractApi.list.mockRejectedValue(new Error('offline'))
+    const result = await workflow.create({ source_text: 'record' })
+    expect(result).toEqual(saved)
+    expect(workflow.workspace.value).toEqual(saved)
+    expect(workflow.error.value).toContain('操作已保存')
+    expect(workflow.busyAction.value).toBe('')
+  })
+
+  it('keeps the current state when a stale edit is rejected', async () => {
+    const workflow = useContractWorkspace()
+    workflow.workspace.value = { id: 'task-one', revision: 5 }
+    workflow.preview.value = { revision: 5, text: 'existing preview' }
+    contractApi.review.mockRejectedValue(new Error('页面已过期'))
+    await workflow.review([{ name: '金额', value: '8000元' }])
+    expect(workflow.workspace.value.revision).toBe(5)
+    expect(workflow.preview.value.revision).toBe(5)
+    expect(workflow.error.value).toContain('页面已过期')
+  })
+})

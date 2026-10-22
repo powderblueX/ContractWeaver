@@ -1,0 +1,191 @@
+/* Guidance and factual progress are independent of original Word layout. */
+.review-stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0;
+}
+.review-stat-strip span {
+  flex: 1;
+  min-width: 150px;
+  padding: 14px;
+  background: #f3f6f1;
+  border-radius: 10px;
+  color: #526961;
+}
+.review-stat-strip strong {
+  display: block;
+  font-size: 24px;
+  color: #244f40;
+  margin-bottom: 5px;
+}
+.next-step-card,
+.operation-card {
+  margin: 18px 32px;
+  padding: 20px 24px;
+  border-radius: 16px;
+  border: 1px solid #c7d9d2;
+  background: #edf6f1;
+}
+.next-step-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.next-step-card h2 {
+  margin: 6px 0;
+  font-size: 20px;
+}
+.next-step-card p,
+.guide-copy {
+  color: #526961;
+  line-height: 1.8;
+}
+.next-step-card button {
+  flex-shrink: 0;
+}
+.operation-card {
+  background: #f3f6fc;
+  border-color: #cdd9eb;
+}
+.operation-card progress {
+  width: 100%;
+  height: 12px;
+  accent-color: #286b58;
+}
+.batch-grid,
+.welcome-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.batch-grid span {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #e6eaf0;
+  font-size: 13px;
+}
+.batch-grid .batch-completed {
+  background: #d8eee0;
+  color: #245b3c;
+}
+.batch-grid .batch-failed {
+  background: #fbe2dc;
+  color: #963d28;
+}
+.batch-grid .batch-extracting,
+.batch-grid .batch-reviewing {
+  background: #dce8fa;
+  color: #2b5592;
+}
+.indeterminate-track {
+  overflow: hidden;
+  height: 4px;
+  background: #d9e2ee;
+  border-radius: 8px;
+}
+.indeterminate-track span {
+  display: block;
+  height: 100%;
+  width: 35%;
+  background: #476c9c;
+  animation: waiting-progress 1.4s ease-in-out infinite;
+}
+@keyframes waiting-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(390%);
+  }
+}
+.welcome-steps {
+  padding-left: 22px;
+  margin: 24px 0;
+  color: #386554;
+  gap: 30px;
+}
+.ignore-unknown-tools,
+.bulk-blank-tools {
+  margin: 18px 0 0;
+  padding: 15px;
+  border: 1px solid #dbe3dd;
+  border-radius: 10px;
+}
+.bulk-blank-tools summary,
+.harness-trace summary,
+.preview-notes summary {
+  cursor: pointer;
+}
+.harness-trace article {
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 2px solid #dbe3dd;
+  overflow-wrap: anywhere;
+}
+.ignore-unknown-tools label,
+.bulk-blank-tools label {
+  display: block;
+  margin: 12px 0;
+}
+.bulk-select {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #526961;
+}
+.field-context p {
+  white-space: pre-wrap;
+}
+.preview-blocked {
+  padding: 24px;
+  border: 1px solid #ecd8b4;
+  border-radius: 12px;
+  background: #fff8eb;
+}
+.preview-blocked p {
+  line-height: 1.8;
+}
+.contract-paper {
+  margin: 24px 0;
+  padding: 28px;
+  border: 1px solid #e1e5de;
+  background: #fffefa;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.contract-paper p {
+  white-space: pre-wrap;
+  margin: 0 0 12px;
+}
+.preview-table-scroll {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.preview-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+}
+.preview-table td {
+  border: 1px solid #bec8c0;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  min-width: 70px;
+}
+.preview-notes {
+  margin: 18px 0;
+}
+@media (max-width: 800px) {
+  .next-step-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .next-step-card,
+  .operation-card {
+    margin: 12px 16px;
+  }
+  .contract-paper {
+    padding: 16px;
+  }
+}

@@ -1,114 +1,210 @@
-# 法理智推 · LawReasoner Agent
+# ContractWeaver — Multi-Agent Contract Filling
 
-法理智推是一个面向中国民事法律问题和合同起草的可审计 Agent。用户在同一个对话里描述事实或合同需求；模型决定调用哪些受控工具，观察法条或模板检索结果，再继续分析。合同文件只在用户本轮明确要求且勾选允许生成时创建，缺失字段保留在文档中供人工核对。
+English | [简体中文](README_zh-CN.md) | [Changelog](CHANGELOG.md)
 
-> 输出是辅助分析与合同草稿，不替代专业法律审查。内置《民法典》数据是项目内的静态副本，上线前须核验版本与现行效力。用户输入将发送到配置的模型服务商。
+An early-stage, human-reviewed multi-agent contract workflow, not a general legal chatbot.
+Provide negotiation chats or meeting minutes; the agent retrieves templates and
+proposes source-grounded values. The user chooses the template, reviews every
+candidate, corrects errors and supplies missing facts before DOCX export.
 
-## 功能
+## Workflow
 
-- Agent 工具：搜索/读取《民法典》、搜索合同模板、查看模板字段、生成 DOCX。每轮限制工具步数，执行记录与对话一起保存；法条原文作为可展开的依据显示在回复旁。
-- 合同资源：保留原项目及 `AI-Contract-Generator` 的部委、地方合同模板和占位符数据，共 567 份。默认基于名称和模板关键词本地检索；可选加载本地 `all-MiniLM-L6-v2 + FAISS` 索引增强排序。
-- 账户和会话：注册、登录、注销、历史对话、会话重命名/删除、按用户隔离的合同下载。令牌是加密安全的随机值，数据库仅存储其 SHA-256 摘要；密码使用带随机盐的 PBKDF2。
-- 《民法典》按需由 Agent 工具查询，界面不再有独立知识库入口。
+Versioned [task prompts](backend/app/agents/prompts.py) explain inputs, processing
+rules, slot mapping and structured output for the supervisor and four specialists. See the
+[prompt specification](docs/agent-prompts.md); this works independently of provider thinking mode.
 
-## 架构
+Email-only sign-in, explicit next-step guidance, live batch polling and actual
+HTTP model-call counters distinguish waiting, failure and human review. Internal
+Word locators are not shown as field labels; final preview uses paragraphs and
+tables. See the [user guide and limits](docs/user-guide.md).
 
 ```text
-LawReasoner-FrontEnd/src/
-  features/agent/       Agent 工作台
-  features/auth/        登录与注册
-  shared/               httpClient、authSession 和共享样式
-  router/               页面路由与访问控制
-
-LawReasoner-BackEnd/
-  app/api/              HTTP 路由、验证和依赖注入
-  app/legal_agent.py    工具决策循环与白名单
-  app/model_client.py   OpenAI 兼容模型接口
-  app/services/         civil_code 与 contract_templates 领域服务
-  app/repositories/     用户、会话和文档的数据访问
-  app/database.py       SQLite 模式与事务
-  app/security.py       密码和会话令牌
-  app/config.py         统一环境配置
-  resources/            民法典、合同模板、索引及本地模型
-  data/                 运行数据与原数据库备份（不入库）
+Negotiation record → supervisor → analysis ↔ template search/observations → user selection
+    → typed Word slots → extraction → independent review ↔ supervisor-targeted repair
+    → whole-contract coverage agent
+    → user corrections / explicit omissions → preview approval → DOCX
 ```
 
-HTTP API 在 `/api/v1`，交互文档在后端 `/docs`。前端开发环境通过 Vite 代理转发 `/api`；生产环境应由反向代理提供同源 `/api/v1`。
+Each agent has separate instructions and context, sharing one configured API
+model. The server controls revisions and permissions; agents cannot approve
+values or generate files on their own. Users may bypass recommendations and
+browse the complete library. Manual filling works without an LLM key.
 
-## 本地运行
+The supervisor makes bounded, model-selected action decisions using structured
+JSON, not provider-native tool calls. Repairs are revalidated and independently
+reviewed before merging; unresolved facts go to the user. See the
+[architecture and executable evidence](docs/project-evidence.md).
 
-需要 Python 3.11+ 和 Node.js 20+。在 Windows PowerShell 中：
+A constrained **agent harness** enforces shared execution budgets, tool-step
+allowlists and a SQLite run journal/lease. The UI exposes actual steps, usage and
+brief decision summaries—not a model's complete private chain of thought.
+See [harness architecture, reasoning configuration and recovery limits](docs/agent-harness.md).
+
+## Model configuration
+
+Configure **`backend/.env`**, never the frontend:
+
+```dotenv
+LAW_LLM_BASE_URL=https://api.deepseek.com
+LAW_LLM_MODEL=deepseek-flash
+LAW_LLM_API_KEY=your-secret
+LAW_LLM_JSON_MODE=json_object
+LAW_LLM_THINKING_MODE=disabled
+LAW_LLM_REASONING_EFFORT=provider_default
+LAW_LLM_MAX_TOKENS=8192
+```
+
+The example now presets DeepSeek Flash's public settings, but never a secret.
+The model ID and endpoint are documented by [DeepSeek](https://api-docs.deepseek.com/).
+To use another provider, replace the base URL and model, without appending
+`/chat/completions`, and set thinking mode to `provider_default` unless supported.
+Requests use backend-only bearer authentication and Chat Completions. Supported
+JSON modes are `json_object`, `json_schema`, and `prompt`; outputs always undergo
+schema validation with bounded retries. Environment variables override `.env`.
+Restart the backend after configuration changes.
+
+The Flash preset explicitly disables thinking for bounded structured extraction;
+it is not a claim that non-thinking output is always correct. All five roles
+share these settings. You may enable thinking, but review timeout/output limits.
+
+Copy [the backend example](backend/.env.example) only if `.env` does
+not already exist. Remote endpoints require HTTPS; loopback HTTP is supported.
+Secrets, databases and generated files are Git-ignored. Production deployments
+should inject secrets through their deployment secret manager. Revoke any keys
+previously exposed in the project's history.
+
+## Local setup
+
+A fictional [custody-contract meeting-minutes example](examples/meeting-minutes-custody.md)
+and [review checklist](examples/README.md) are available. Windows 11 users without
+Docker can follow the [startup/shutdown guide](docs/windows-quickstart.md).
+`stop-project.bat` stops project processes and removes transient caches;
+`stop-and-clean.bat` also removes dependencies/build output, preserving secrets,
+templates and user data. Shared system/browser caches are not deleted.
+
+Beginner-friendly [deployment instructions](docs/deployment.md) include Windows
+`scripts/setup.bat`, separate `start-backend.bat` / `start-frontend.bat`, and
+Linux/macOS `.sh` equivalents. Setup never overwrites existing backend secrets.
+Dockerfiles and `compose.yaml` provide an alternative: configure `backend/.env`,
+then run `docker compose up -d --build --wait` and open `http://localhost:8080`.
+Compose uses a separate persistent volume, not existing local user data. Container
+runtime acceptance is still pending; see the deployment and validation records.
+
+Requirements: Python 3.11+, Node.js 20+. From the project root in PowerShell:
 
 ```powershell
-cd LawReasoner-BackEnd
-py -3 -m venv .venv
+cd backend
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
-```
-
-在 `.env` 中设置 `LAW_LLM_API_KEY`，必要时修改 `LAW_LLM_BASE_URL` 与 `LAW_LLM_MODEL`。模型服务须支持 OpenAI 兼容的 `chat/completions` 和函数工具调用。启动后端：
-
-```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# Edit .env before using automatic analysis/extraction.
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-再开一个终端启动前端：
+In another terminal:
 
 ```powershell
-cd LawReasoner-FrontEnd
+cd frontend
 npm ci
-Copy-Item .env.example .env
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173`。未配置模型密钥时，健康检查与账户功能可用，Agent 请求会明确返回 503。
+Open `http://localhost:5173`. API docs: `http://127.0.0.1:8000/docs`.
+`GET /api/v1/health` reports missing configuration names, not credentials; it
+does not validate a real provider connection.
 
-仓库不依赖已创建的虚拟环境或 `node_modules`：后端通过 `requirements.txt`（可选检索依赖见 `requirements-search.txt`）重建，前端通过 `package-lock.json` 和 `npm ci` 重建。后端 `.env` 只放本机或部署环境；前端 `.env` 只允许公开的 API 路径和开发代理地址，不能放模型密钥。
+Detailed Windows/Linux/macOS setup, troubleshooting and production deployment
+guidance are in [Deployment](docs/deployment.md). README keeps the quick start;
+longer operational instructions live in `docs/`.
 
-### 可选语义检索
+## Original templates, not free-form rewriting
 
-默认检索不下载模型，可以直接使用。若要使用已迁入的本地模型与 FAISS 索引：
+The catalog reads originals from
+`backend/resources/contracts/templates/{Ministerial,Regional}`.
+Manually inserted placeholders are **not required**. An in-memory compiler
+identifies underscore blanks, underlined whitespace, repeated internal spaces,
+empty table cells and colon-adjacent candidates. Stable per-location fields
+include surrounding text and table context. Existing explicit markers remain
+supported. Original DOCX files are never modified.
+
+The LLM proposes field values with quoted source lines; a separate agent reviews
+them. Humans must confirm every candidate or explain why it remains blank.
+Code then writes only reviewed locations, preserves surrounding run formatting
+and checks resulting paragraph text before saving. Omitted generated candidates
+restore their original blanks. File and engine fingerprints invalidate stale
+field mappings.
+
+This is **not a guarantee of semantic completeness**. Formatting blanks can be
+false positives; single spaces, visual choices and arbitrary Word layouts may
+need manual maintenance. Images/shapes are preserved rather than blanket-blocked;
+they are not OCR-filled and require separate human visual acknowledgement.
+Text boxes are scanned, and identical modern/legacy branches are synchronized.
+Unsupported embedded content, controls, tracked changes, notes and inconsistent
+compatibility branches still block filling. Compare the original against the
+review and inspect the final DOCX. The current audit verifies 494 of 567 originals,
+with 73 blocked and 92 of the supported templates requiring visual acknowledgement.
+See the [current audit](docs/validation.md)
+for coverage and acceptance limits; structural checks are not semantic certification.
+The obsolete placeholder DOCX/JSON library has been removed at the owner's
+request; its contents remain recoverable from Git history. Runtime reads only
+originals under `templates/`. Resource cleanup alone does not increase coverage.
+
+See [template safety and acceptance](docs/template-engine.md), the
+[Chinese configuration reference](README_zh-CN.md), [API workflow](docs/contract-workflow.md),
+and [validation record](docs/validation.md).
+Default retrieval fuses separate name/keyword BM25 ranks and exact-name matches
+with RRF. Up to 30 candidates undergo structural filtering to recommend at most
+five candidates; ordinary non-named results must be fillable, and results are not
+guaranteed globally optimal. This is not
+full-corpus question-answering RAG. See [retrieval design](docs/template-retrieval.md).
+Explicitly requested names are preserved with source evidence and prioritized;
+literal positive source requests also have a deterministic fallback. Named but
+unsupported originals remain visible with reasons and cannot be auto-filled.
+Ambiguous names, versions and changed decisions still require human judgment.
+Optional local MiniLM/FAISS retrieval uses `requirements-search.txt` and
+`LAW_EMBEDDING_MODEL_PATH`; this is not a fine-tuned conversational LLM.
+
+## Architecture and checks
+
+Backend layers: `api` → `services` / specialist `agents` → `domain` and
+`repositories`; `documents` handles deterministic Word structure. Frontend
+features separate contract components, state orchestration and HTTP contracts.
+SQLite uses owner-scoped records and revision compare-and-swap. Generated
+versions are immutable snapshots. No standalone legal consultation or law lookup
+is part of this workflow.
 
 ```powershell
-cd LawReasoner-BackEnd
-.\.venv\Scripts\python.exe -m pip install -r requirements-search.txt
-```
-
-设置 `LAW_EMBEDDING_MODEL_PATH` 为 `LawReasoner-BackEnd/resources/embedding/all-MiniLM-L6-v2` 的绝对路径。索引与文件名数量不符时，系统回退到关键词检索。模型路径和其它部署路径可通过环境变量覆盖，详见 `.env.example`。
-
-## 配置与保密
-
-所有模型密钥只从后端进程环境或本地 `.env` 读取；`.env`、数据库、生成合同、虚拟环境及前端构建目录已列入 `.gitignore`。不要在 `VITE_` 变量中放密钥，因为前端构建会公开它们。生产环境建议用部署平台的 Secret Manager 注入环境变量，不要把 `.env` 提交到仓库。原项目中的千问密钥、邮箱授权码和固定 JWT 密钥曾以明文存在，须在对应服务商处轮换或撤销；删除代码并不能撤销已泄露的凭据。
-
-主要环境变量：
-
-| 变量 | 用途 |
-| --- | --- |
-| `LAW_LLM_API_KEY` | 模型服务密钥，Agent 必填 |
-| `LAW_LLM_BASE_URL` / `LAW_LLM_MODEL` | 模型端点和模型名 |
-| `LAW_DATABASE_PATH` | SQLite 数据库路径 |
-| `LAW_RESOURCES_DIR` / `LAW_GENERATED_DIR` | 模板资源与生成文件路径 |
-| `LAW_CIVIL_CODE_PATH` | 本地《民法典》JSON 路径 |
-| `LAW_EMBEDDING_MODEL_PATH` | 可选本地嵌入模型目录 |
-| `LAW_CORS_ORIGINS` | 允许的前端来源，逗号分隔 |
-| `LAW_MAX_AGENT_STEPS` | 单轮工具调用步数上限 |
-
-旧数据库原件保留在 `LawReasoner-BackEnd/data/legacy_shared_db.db`。本次已导入现有 2 个账户和 1 个历史会话；如果重新部署到空数据库，可以运行 `python -m app.migrate_legacy`，脚本可重复执行。旧 bcrypt 密码在用户首次成功登录后升级为 PBKDF2。
-
-## 验证
-
-```powershell
-cd LawReasoner-BackEnd
+cd backend
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-cd ..\LawReasoner-FrontEnd
+.\.venv\Scripts\python.exe -m ruff check app tests
+.\.venv\Scripts\python.exe -m app.cli.audit_templates
+cd ../frontend
+npm test
 npm run build
 ```
 
-测试覆盖认证、Agent 法条工具、会话归属隔离、注销及合同 DOCX 占位符处理。真实模型调用需配置自己的密钥；测试中的 Agent 模型是受控替身，不产生计费请求。
+Automated model tests use fakes, not paid API calls. Real provider accuracy,
+production deployment and per-template business completeness still require
+acceptance testing. Input supports TXT/MD/DOCX, not OCR, PDF or audio. Preview is
+textual, not a Word layout renderer. Multi-instance deployments require further
+database and background-job infrastructure. Version `0.1.0` identifies this
+architecture; no release tag or production certification is implied.
+See [requirements and remaining acceptance](docs/requirements-status.md) before
+describing the project as fully complete or ready for unrestricted distribution.
 
-## 当前边界
+## Repository layout
 
-- 本地《民法典》检索只覆盖随项目提供的静态文本，不自动同步法规变更；回答仍需人工核对引用与事实。
-- SQLite 适合单机或小规模部署。多实例部署应替换数据层为集中式数据库，并引入任务队列处理较长的模型调用。
-- 合同草稿保留未填写的占位符，不自动补造事实；提交给他人前必须核对和审阅。
-- 旧系统的邮件验证码、密码重置和个人资料编辑没有迁入新工作台；上线前若需要这些能力，应接入合适的身份服务或补齐对应流程。
+```text
+ContractWeaver/
+  backend/      API, specialist agents, workflow, persistence and document engine
+  frontend/     Vue application, feature components and client-side state
+  docs/         Architecture, workflow, validation and repository guidance
+  scripts/      Local verification entry point
+```
+
+This is one deployable backend and one frontend, not a fleet of microservices.
+Each specialist agent has its own task and context, coordinated by a bounded,
+human-in-the-loop workflow. Product identity is independent from Git history.
+See [repository naming and migration](docs/repository.md) before renaming GitHub.
+For local checks, run `./scripts/check.ps1` after installing development dependencies.

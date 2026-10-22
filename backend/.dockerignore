@@ -1,0 +1,11 @@
+*
+!requirements.txt
+!app/
+!app/**
+!resources/
+!resources/contracts/
+!resources/contracts/templates/
+!resources/contracts/templates/**
+**/__pycache__/
+**/*.pyc
+**/.env
