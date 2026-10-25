@@ -1,12 +1,14 @@
 # 契织（ContractWeaver）· 基于多 Agent 协同的智能合同填写系统
 
-[English](README.md) | 简体中文 | [版本变更](CHANGELOG.md)
+[English](README.md) | 简体中文
 
 版本号：`0.1.0`（初始开发版本）。这是围绕合同填写构建的 multi-agent 项目，不代表已经完成生产验收或真实服务商端到端验收；仓库没有创建发布标签。模板结构识别的适用范围见下文和[模板引擎说明](docs/template-engine.md)。
 
 从合同协商的聊天记录或会议纪要出发，识别交易需求，检索合同模板，由用户选择模板，再提取对应字段、核对原文、补充修改，最后生成 DOCX 合同。
 
 ## 使用流程
+
+完整学习入口：[Agent + Harness 中文图解](docs/agent-harness-guide.zh-CN.md) · [整个项目代码阅读顺序](docs/code-reading-guide.zh-CN.md) · [注释规范与检查](docs/code-commenting.md)。
 
 主控 Agent 现已根据观察动态分派动作：分析后可调整检索词再次检索；独立复核后可定向修正问题字段并再次复核，或交用户补充。不是只给固定流水线的节点换名字；也不是无限自主改写合同。实现、测试和能力边界见 [项目能力证据](docs/project-evidence.md)。
 

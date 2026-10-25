@@ -1,6 +1,6 @@
 # ContractWeaver — Multi-Agent Contract Filling
 
-English | [简体中文](README_zh-CN.md) | [Changelog](CHANGELOG.md)
+English | [简体中文](README_zh-CN.md)
 
 An early-stage, human-reviewed multi-agent contract workflow, not a general legal chatbot.
 Provide negotiation chats or meeting minutes; the agent retrieves templates and
@@ -8,6 +8,10 @@ proposes source-grounded values. The user chooses the template, reviews every
 candidate, corrects errors and supplies missing facts before DOCX export.
 
 ## Workflow
+
+Developer guides (中文): [illustrated Agent + Harness guide](docs/agent-harness-guide.zh-CN.md),
+[whole-project reading order](docs/code-reading-guide.zh-CN.md), and
+[commenting conventions/checks](docs/code-commenting.md).
 
 Versioned [task prompts](backend/app/agents/prompts.py) explain inputs, processing
 rules, slot mapping and structured output for the supervisor and four specialists. See the
