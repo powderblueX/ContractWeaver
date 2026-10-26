@@ -1,3 +1,4 @@
+<!-- @file 本地审核草稿、批量确认和暂留空操作，不擅自替用户审批。 -->
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { fieldLabel, readableText } from '../fieldPresentation'
@@ -5,6 +6,7 @@ import { fieldLabel, readableText } from '../fieldPresentation'
 const props = defineProps({ fields: { type: Array, default: () => [] }, busy: Boolean })
 const emit = defineEmits(['save', 'source', 'dirty'])
 const drafts = ref({})
+// drafts 是未提交的编辑缓冲；props.fields 始终代表最近一次服务端保存结果。
 const filter = ref('all')
 const search = ref('')
 const selectedBlanks = ref([])
@@ -13,6 +15,7 @@ const unknownReason = ref('首轮纪要未提供或尚未确定，本次草稿�
 const pageIndex = ref(0)
 const pageSize = 20
 let savingNames = new Set()
+// 仅清理本次成功保存的字段，保留同页其他尚未提交的修改。
 const statusLabels = {
   extracted: '待核对',
   missing: '未提取到',
@@ -58,6 +61,10 @@ watch(
   }
 )
 
+/**
+ * 判断字段是否已由用户确认或明确留空，不把模型提取当成人工审核。
+ * @param {Object} field 当前字段元数据和审核状态。
+ */
 const isReviewed = (field) => ['confirmed', 'omitted'].includes(field.status)
 const changedFields = computed(() =>
   props.fields.filter((field) => {
@@ -116,26 +123,45 @@ const pendingWithValues = computed(() =>
   )
 )
 
+/**
+ * 把指定字段的本地草稿序列化为服务端审核协议。
+ * @param {Array<Object>} fields 本次参与决定的字段集合。
+ */
 function decisionsFor(fields) {
   return fields.map((field) => ({ name: field.name, ...drafts.value[field.name] }))
 }
 
+/**
+ * 记录本次保存目标并提交审核，避免刷新时覆盖其他未保存草稿。
+ * @param {Array<Object>} fields 本次参与决定的字段集合。
+ */
 function saveDecisions(fields) {
   savingNames = new Set(fields.map((field) => field.name))
   emit('save', decisionsFor(fields))
 }
 
+/**
+ * 把原文中的候选填入本地草稿；仍需用户保存确认。
+ * @param {string} fieldName 本地草稿使用的内部字段名。
+ * @param {string} value 用户选择或输入的候选值。
+ */
 function useAlternative(fieldName, value) {
   drafts.value[fieldName].value = value
   drafts.value[fieldName].action = 'confirm'
 }
 
+/**
+ * 仅批量确认无复核警告的非空候选，并要求一次明确确认。
+ */
 function saveAllFilled() {
   if (
     window.confirm(`确认已经核对这 ${pendingWithValues.value.length} 个已填写字段，并将它们作为合同填写值？`)
   )
     saveDecisions(pendingWithValues.value)
 }
+/**
+ * 跨筛选和分页暂留空未确定字段，不覆盖已有值、已审核项或未保存修改。
+ */
 function ignoreUnknownFields() {
   const fields = unknownFields.value
   const reason = unknownReason.value.trim()
@@ -154,6 +180,9 @@ function ignoreUnknownFields() {
   saveDecisions(fields)
   selectedBlanks.value = selectedBlanks.value.filter((name) => !savingNames.has(name))
 }
+/**
+ * 仅勾选本页未审核且无值的表格或排版候选，不提交留空决定。
+ */
 function selectVisibleBlanks() {
   selectedBlanks.value = visibleFields.value
     .filter(
@@ -164,6 +193,9 @@ function selectVisibleBlanks() {
     )
     .map((field) => field.name)
 }
+/**
+ * 给已勾选空白统一记录原因并提交，不自动清除非空内容。
+ */
 function omitSelected() {
   const fields = props.fields.filter(
     (field) => selectedBlanks.value.includes(field.name) && !drafts.value[field.name]?.value.trim()

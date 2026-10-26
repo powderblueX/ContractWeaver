@@ -1,3 +1,4 @@
+/** @file 验证本组件或状态模块的交互、异常和资源清理；不调用真实模型。 */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ContractPreviewPanel from '../components/ContractPreviewPanel.vue'

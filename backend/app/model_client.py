@@ -12,6 +12,8 @@ from app.observability import operations
 
 
 class ModelUnavailable(RuntimeError):
+    """表示模型配置、连接或结构化结果不能用于本次任务。"""
+
     pass
 
 
@@ -19,22 +21,38 @@ StructuredResult = TypeVar("StructuredResult", bound=BaseModel)
 
 
 class ChatModel:
+    """负责兼容 API 传输、结构输出校验与预算记账的模型适配器，不执行业务工具。"""
+
     def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
+        """注入依赖并初始化本实例的状态，保持资源所有权与其他请求隔离。
+
+        Args:
+            settings: 已解析的运行配置，包含路径、模型及预算；不得公开密钥。
+            client: 可注入的异步 HTTP 客户端；用于复用连接或离线测试。
+        """
         self.settings = settings
         self.client = client
         self._owns_client = client is None
 
     async def __aenter__(self):
+        """进入异步上下文并准备本实例共享的模型连接。"""
         if self.client is None:
             self.client = httpx.AsyncClient(timeout=self.settings.request_timeout)
         return self
 
     async def __aexit__(self, *_):
+        """退出异步上下文，按资源所有权关闭共享连接。"""
         if self._owns_client and self.client is not None:
             await self.client.aclose()
             self.client = None
 
     async def complete(self, messages: list[dict], response_format: dict | None = None) -> dict:
+        """向配置的兼容端点发送一次请求，受 Harness 预算约束并丢弃原始推理通道。
+
+        Args:
+            messages: 本次模型请求的独立消息上下文。
+            response_format: 当前服务商支持的 JSON 输出模式。
+        """
         if not self.settings.model_configured:
             missing = ", ".join(self.settings.missing_model_settings)
             raise ModelUnavailable(f"请在后端 .env 配置 {missing}，然后重启服务")
@@ -55,6 +73,11 @@ class ChatModel:
             payload["response_format"] = response_format
 
         async def request(client: httpx.AsyncClient) -> dict:
+            """执行一次实际 HTTP 传输并记录计数，检查截断和响应消息结构。
+
+            Args:
+                client: 可注入的异步 HTTP 客户端；用于复用连接或离线测试。
+            """
             runtime = current_run.get()
             if runtime:
                 runtime.reserve_request(len(json.dumps(payload, ensure_ascii=False)))

@@ -7,6 +7,14 @@ from app.domain.errors import InvalidContractInput
 
 
 def slot_spec(text: str, start: int, end: int, *, choices=()) -> dict:
+    """从左右固定文字推断日期分格、枚举和大写金额等槽位约束。
+
+    Args:
+        text: 本次规范化、分词或展示使用的文本。
+        start: 基于原文本的起始偏移。
+        end: 基于原文本的结束偏移。
+        choices: 该槽位允许填写的有限选项。
+    """
     before, after = text[:start], text[end:]
     clause = re.split(r"第[一二三四五六七八九十百]+条|[。；\n]", before)[-1]
     label = re.split(r"[：:]", clause.rstrip(" ：:\t"))[-1].strip()
@@ -56,6 +64,12 @@ def value_issue(spec: dict, value: str) -> str:
 
 
 def validate_slot_values(fields: list[dict], values: dict[str, str]) -> None:
+    """验证拟写入值与槽位规则及完整日期组合，不合法时拒绝确认或导出。
+
+    Args:
+        fields: 本次操作关联的字段集合。
+        values: 已确认或待校验的字段名到值映射。
+    """
     dates = {}
     for field in fields:
         issue = value_issue(field, values.get(field["name"], ""))

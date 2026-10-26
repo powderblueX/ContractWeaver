@@ -11,12 +11,21 @@ from app.documents.word_compatibility import inspect_compatibility
 
 @dataclass(frozen=True)
 class TemplateSafety:
+    """汇总原件硬拦截原因、告警和视觉复核需求。"""
+
     blockers: tuple[str, ...]
     warnings: tuple[str, ...]
     requires_visual_review: bool
 
 
 def inspect_template_safety(document, paragraphs: list, compatibility=None) -> TemplateSafety:
+    """扫描无法安全写入的复杂 Word 结构，并区分硬拦截与人工视觉复核。
+
+    Args:
+        document: 内存中的 Word 文档对象，不能据此改动原件。
+        paragraphs: 按实际文档顺序遍历的 Word 段落集合。
+        compatibility: 预先检查的 Word 新旧分支同步关系。
+    """
     blockers, warnings = [], []
     visual_review = False
     compatibility = compatibility or inspect_compatibility(paragraphs)

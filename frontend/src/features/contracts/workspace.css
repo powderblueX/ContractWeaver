@@ -1,3 +1,4 @@
+/* @file 页面骨架、原文/模板/审核/预览组件及响应式布局。 */
 .contract-app {
   display: flex;
   min-height: 100vh;

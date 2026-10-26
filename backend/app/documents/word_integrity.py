@@ -10,6 +10,11 @@ from app.documents.word_documents import iter_document_paragraphs
 
 
 def visual_fingerprint(document) -> tuple:
+    """对图形框体和媒体生成指纹，允许修改文本框文字但不允许破坏图形结构。
+
+    Args:
+        document: 内存中的 Word 文档对象，不能据此改动原件。
+    """
     roots = [document.element]
     for paragraph in iter_document_paragraphs(document):
         root = paragraph._p.getroottree().getroot()

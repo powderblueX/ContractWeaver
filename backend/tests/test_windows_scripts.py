@@ -12,12 +12,16 @@ HELPER = ROOT / "scripts" / "windows-project-processes.ps1"
 
 
 def quote(value: str) -> str:
+    """Exercise quote within this isolated test scenario."""
     return "'" + value.replace("'", "''") + "'"
 
 
 @skipUnless(os.name == "nt" and shutil.which("powershell.exe"), "Windows PowerShell required")
 class WindowsScriptTests(TestCase):
+    """测试夹具或替身：WindowsScriptTests，用于隔离验证本模块行为。"""
+
     def run_script(self, body: str):
+        """Exercise run script within this isolated test scenario."""
         result = subprocess.run(
             [
                 "powershell.exe",
@@ -36,6 +40,7 @@ class WindowsScriptTests(TestCase):
         return result.stdout
 
     def test_process_scope_and_child_discovery_do_not_match_other_projects(self):
+        """Verify process scope and child discovery do not match other projects."""
         body = r"""
         $root = 'C:\Example ContractWeaver'
         $time = [datetime]'2026-10-21T10:00:00'
@@ -59,6 +64,7 @@ class WindowsScriptTests(TestCase):
         self.run_script(body)
 
     def test_cleanup_is_bounded_and_preserves_configuration_and_data(self):
+        """Verify cleanup is bounded and preserves configuration and data."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary) / "Project With Spaces"
             cache = root / "frontend" / ".npm-cache"

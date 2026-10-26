@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class RetrievalPolicy:
+    """集中配置候选池、BM25 参数和多路排序融合权重。"""
+
     candidate_pool: int = 30
     bm25_k1: float = 1.5
     bm25_b: float = 0.75
@@ -66,6 +68,11 @@ def explicit_source_titles(source: str, catalog_names: list[str]) -> set[str]:
 
 
 def tokenize(text: str) -> list[str]:
+    """把中文切成字符双元组，并保留英文与数字片段供本地检索。
+
+    Args:
+        text: 本次规范化、分词或展示使用的文本。
+    """
     tokens = []
     for segment in re.findall(r"[\u4e00-\u9fff]+|[a-z0-9]+", text.casefold()):
         if re.fullmatch(r"[\u4e00-\u9fff]+", segment):
@@ -79,6 +86,13 @@ def tokenize(text: str) -> list[str]:
 
 
 def bm25_scores(query: str, documents: list[str], policy: RetrievalPolicy) -> list[float]:
+    """按配置计算查询与元数据文档的 BM25 分数，供多路排序融合。
+
+    Args:
+        query: 聚焦业务类型的检索词，不应包含当事人隐私。
+        documents: 参与当前检索通道评分的元数据文本。
+        policy: 当前检索通道使用的统一评分策略。
+    """
     counters = [Counter(tokenize(document)) for document in documents]
     lengths = [sum(counter.values()) for counter in counters]
     average = sum(lengths) / max(1, len(lengths)) or 1.0

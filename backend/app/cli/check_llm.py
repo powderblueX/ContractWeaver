@@ -11,6 +11,8 @@ from app.model_client import ChatModel, ModelUnavailable
 
 
 class ConnectionResult(BaseModel):
+    """保存脱敏连接检查结论，不包含服务商密钥。"""
+
     model_config = ConfigDict(extra="forbid")
     status: Literal["ok"]
 
@@ -27,6 +29,7 @@ async def check_connection(settings: Settings) -> None:
 
 
 def main() -> int:
+    """读取运行配置并执行合成数据连通检查；实际检查可能产生一次模型费用。"""
     try:
         asyncio.run(check_connection(get_settings()))
     except ValidationError:

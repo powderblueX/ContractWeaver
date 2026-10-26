@@ -1,13 +1,17 @@
-"""Account and revocable session persistence."""
+"""账户与会话仓储。"""
 
 from app.database import Database
 
 
 class AccountRepository:
+    """账户与访问令牌仓储。"""
+
     def __init__(self, db: Database):
+        """保存数据库访问对象。"""
         self.db = db
 
     def create(self, username: str, email: str, password_hash: str) -> dict:
+        """写入账户和密码哈希。"""
         with self.db.connection() as conn:
             cursor = conn.execute(
                 "INSERT INTO users(username,email,password_hash) VALUES(?,?,?)",
@@ -16,6 +20,7 @@ class AccountRepository:
             return {"id": cursor.lastrowid, "username": username, "email": email}
 
     def find_by_email(self, identity: str):
+        """按邮箱查找账户。"""
         with self.db.connection() as conn:
             row = conn.execute(
                 "SELECT id,username,email,password_hash FROM users WHERE lower(email)=?",
@@ -24,10 +29,12 @@ class AccountRepository:
             return dict(row) if row else None
 
     def upgrade_password(self, user_id: int, password_hash: str) -> None:
+        """更新账户的密码哈希格式。"""
         with self.db.connection() as conn:
             conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
 
     def save_token(self, digest: str, user_id: int, expiry: str) -> None:
+        """保存访问令牌摘要和到期时间。"""
         with self.db.connection() as conn:
             conn.execute(
                 "INSERT INTO access_tokens(token_hash,user_id,expires_at) VALUES(?,?,?)",
@@ -35,6 +42,7 @@ class AccountRepository:
             )
 
     def find_token(self, digest: str):
+        """按令牌摘要读取账户和到期时间。"""
         with self.db.connection() as conn:
             row = conn.execute(
                 "SELECT u.id,u.username,u.email,t.expires_at FROM access_tokens t "
@@ -44,5 +52,6 @@ class AccountRepository:
             return dict(row) if row else None
 
     def delete_token(self, digest: str, user_id: int) -> None:
+        """删除指定账户的访问令牌。"""
         with self.db.connection() as conn:
             conn.execute("DELETE FROM access_tokens WHERE token_hash=? AND user_id=?", (digest, user_id))

@@ -20,14 +20,31 @@ from app.services.source_records import number_source_lines, validate_source_tex
 
 
 class ContractWorkflowService:
+    """协调任务状态、人机审批和生成文件归属的领域服务。"""
+
     def __init__(
         self, repository: ContractWorkspaceRepository, catalog: ContractTemplateCatalog, settings: Settings
     ):
+        """注入依赖并初始化本实例的状态，保持资源所有权与其他请求隔离。
+
+        Args:
+            repository: 负责用户隔离与修订控制的仓储。
+            catalog: 受控的原始模板目录及检索/写入服务。
+            settings: 已解析的运行配置，包含路径、模型及预算；不得公开密钥。
+        """
         self.repository = repository
         self.catalog = catalog
         self.settings = settings
 
     def create(self, user_id: int, title: str, source_name: str, source_text: str) -> ContractWorkspace:
+        """校验纪要后创建用户归属任务，并记录导入事件。
+
+        Args:
+            user_id: 当前访问资源的账户标识。
+            title: 用户指定的任务或模板名称。
+            source_name: 纪要来源的展示名称。
+            source_text: 尚未被模型改写的原始协商记录。
+        """
         source_text = validate_source_text(source_text, self.settings)
         now = utc_timestamp()
         workspace = ContractWorkspace(
@@ -42,12 +59,27 @@ class ContractWorkflowService:
         return self.repository.create(workspace, user_id)
 
     def _load(self, workspace_id: str, user_id: int, revision: int) -> ContractWorkspace:
+        """同时验证任务归属及预期修订号，防止旧页面覆盖状态。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+            revision: 调用方持有的任务修订号。
+        """
         workspace = self.repository.get(workspace_id, user_id)
         if workspace.revision != revision:
             raise WorkspaceConflict("页面已过期，请重新打开任务后再操作")
         return workspace
 
     def rename(self, workspace_id: str, user_id: int, revision: int, title: str) -> ContractWorkspace:
+        """仅修改任务名称，并以比较交换方式保存新修订。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+            revision: 调用方持有的任务修订号。
+            title: 用户指定的任务或模板名称。
+        """
         workspace = self._load(workspace_id, user_id, revision)
         if not title.strip():
             raise InvalidContractInput("任务名称不能为空")
@@ -55,6 +87,12 @@ class ContractWorkflowService:
         return self.repository.save(workspace, user_id, revision)
 
     def delete(self, workspace_id: str, user_id: int) -> None:
+        """删除归属已核验的任务与生成文件，不对目录执行递归删除。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+        """
         filenames = self.repository.delete(workspace_id, user_id)
         root = self.settings.generated_dir.resolve()
         for filename in filenames:
@@ -64,11 +102,24 @@ class ContractWorkflowService:
 
     @staticmethod
     def _event(workspace: ContractWorkspace, role: str, action: str, detail: str) -> None:
+        """在任务内追加带角色、动作和统一时间戳的执行事件。
+
+        Args:
+            workspace: 当前合同任务领域快照。
+            role: 本次事件所属的用户、模型角色或代码工具。
+            action: 当前业务阶段或主控选择的受限动作。
+            detail: 向用户展示的简短事件说明。
+        """
         workspace.events.append(
             AgentEvent(role=role, action=action, detail=detail, created_at=utc_timestamp())
         )
 
     def _template_details(self, workspace: ContractWorkspace) -> dict:
+        """校验原件及引擎指纹，拒绝用过期位置映射写入新版模板。
+
+        Args:
+            workspace: 当前合同任务领域快照。
+        """
         if workspace.selected_template is None:
             raise InvalidContractInput("请先选择合同模板")
         template = self.catalog.get_template(workspace.selected_template["id"])
@@ -84,6 +135,13 @@ class ContractWorkflowService:
 
     @observed("analyze")
     async def analyze(self, workspace_id: str, user_id: int, revision: int) -> ContractWorkspace:
+        """提取交易类型、最终共识和检索意图；不选择模板或生成合同。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+            revision: 调用方持有的任务修订号。
+        """
         workspace = self._load(workspace_id, user_id, revision)
         if workspace.selected_template is not None:
             raise InvalidContractInput("任务已选择模板；如需重新分析记录，请创建新的合同任务")
@@ -114,6 +172,11 @@ class ContractWorkflowService:
         return self.repository.save(workspace, user_id, revision)
 
     def present_workspace(self, workspace):
+        """为当前映射补充可读标签；指纹过期时仅提示重选，不错误重标旧字段。
+
+        Args:
+            workspace: 当前合同任务领域快照。
+        """
         if workspace.selected_template:
             details = self.catalog.describe_template(workspace.selected_template["id"])
             if workspace.selected_template.get("schema_fingerprint") != details["schema_fingerprint"]:
@@ -138,6 +201,14 @@ class ContractWorkflowService:
     def select_template(
         self, workspace_id: str, user_id: int, revision: int, template_id: str
     ) -> ContractWorkspace:
+        """由用户明确选定原件，并重新建立字段映射与人工审核起点。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+            revision: 调用方持有的任务修订号。
+            template_id: 模板目录中的受控标识。
+        """
         workspace = self._load(workspace_id, user_id, revision)
         template = self.catalog.get_template(template_id)
         details = self.catalog.describe_template(template_id)
@@ -172,6 +243,15 @@ class ContractWorkflowService:
         replace_reviewed: bool = False,
         retry_failed: bool = False,
     ) -> ContractWorkspace:
+        """分批提取、复核并按需定向修正；失败批次和已有人工审核有独立保护。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+            revision: 调用方持有的任务修订号。
+            replace_reviewed: 用户是否明确允许重新提取覆盖既有人工审核。
+            retry_failed: 是否只重试未被人工审核的失败字段。
+        """
         workspace = self._load(workspace_id, user_id, revision)
         if (
             not retry_failed
@@ -215,12 +295,24 @@ class ContractWorkflowService:
         async with create_agent_team(self.settings) as team:
 
             async def extract_batch(index, template_fields: list[dict]) -> FieldCoordinationResult:
+                """在并发额度内运行本批提取、复核和受限主控修正。
+
+                Args:
+                    index: 当前集合的内部索引。
+                    template_fields: 当前批次可填写位置及附近文字、类型约束。
+                """
                 async with semaphore:
                     return await FieldCoordinator(team, self.settings).run(
                         source_lines, template_fields, index
                     )
 
             async def monitored_batch(index, batch):
+                """为批次异常发布可观测状态，再交由汇总逻辑保留部分成功。
+
+                Args:
+                    index: 当前集合的内部索引。
+                    batch: 当前批次的模板字段集合。
+                """
                 try:
                     return await extract_batch(index, batch)
                 except Exception as error:
@@ -316,6 +408,14 @@ class ContractWorkflowService:
     def review_fields(
         self, workspace_id: str, user_id: int, revision: int, decisions: list[dict]
     ) -> ContractWorkspace:
+        """保存用户的确认、修改或明确留空决定，并验证填写类型约束。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+            revision: 调用方持有的任务修订号。
+            decisions: 用户提交的字段确认、修改或留空决定。
+        """
         workspace = self._load(workspace_id, user_id, revision)
         if not workspace.fields:
             raise InvalidContractInput("请先按模板提取字段")
@@ -364,6 +464,12 @@ class ContractWorkflowService:
         return self.repository.save(workspace, user_id, revision)
 
     def preview(self, workspace_id: str, user_id: int) -> dict:
+        """只用已确认值和明确留空决定构建当前任务的文字预览。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+        """
         workspace = self.repository.get(workspace_id, user_id)
         self._template_details(workspace)
         values = {
@@ -392,6 +498,15 @@ class ContractWorkflowService:
         preview_acknowledged: bool,
         visual_review_acknowledged: bool = False,
     ) -> ContractWorkspace:
+        """校验人工审批、视觉复核和字段状态后写入合同，并原子保存文件归属。
+
+        Args:
+            workspace_id: 需要校验归属的合同任务标识。
+            user_id: 当前访问资源的账户标识。
+            revision: 调用方持有的任务修订号。
+            preview_acknowledged: 用户是否确认已核对当前版本预览。
+            visual_review_acknowledged: 用户是否单独确认已查看原件图形区域。
+        """
         workspace = self._load(workspace_id, user_id, revision)
         details = self._template_details(workspace)
         if details["requires_visual_review"] and not visual_review_acknowledged:

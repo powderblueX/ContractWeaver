@@ -32,16 +32,19 @@ class Settings(BaseSettings):
     )
 
     database_path: Path = Field(default_factory=default_database_path)
+    # 数据与模板路径在后端解析，不能由前端提交任意绝对路径替换。
     resources_dir: Path = BASE_DIR / "resources" / "contracts"
     generated_dir: Path = BASE_DIR / "data" / "generated"
     cors_origins_csv: str = Field("http://localhost:5173", validation_alias="LAW_CORS_ORIGINS")
     llm_base_url: str = ""
+    # SecretStr 仅负责减少意外展示；部署时仍须使用未跟踪 .env 或密钥管理服务。
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
     llm_json_mode: Literal["json_object", "json_schema", "prompt"] = "json_object"
     llm_thinking_mode: Literal["provider_default", "enabled", "disabled"] = "provider_default"
     llm_reasoning_effort: Literal["provider_default", "low", "high", "max"] = "provider_default"
     harness_max_requests: int = Field(512, ge=1, le=2000)
+    # 主控、批处理和格式重试共同消耗以下运行预算。
     harness_max_steps: int = Field(512, ge=2, le=2000)
     harness_timeout_seconds: float = Field(3600, ge=10, le=14400)
     harness_max_input_chars: int = Field(500000, ge=10000, le=2000000)
@@ -51,6 +54,7 @@ class Settings(BaseSettings):
     max_source_chars: int = Field(60000, ge=1000, le=300000)
     max_upload_bytes: int = Field(5 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
     fields_per_batch: int = Field(30, ge=5, le=80)
+    # 并发数决定同时处理的字段批次；不表示模型副本或独立基础模型数量。
     agent_parallelism: int = Field(2, ge=1, le=4)
     supervisor_max_searches: int = Field(3, ge=1, le=5)
     supervisor_max_repairs: int = Field(1, ge=0, le=2)
@@ -67,6 +71,11 @@ class Settings(BaseSettings):
     @field_validator("database_path", "resources_dir", "generated_dir", "embedding_model_path", mode="after")
     @classmethod
     def resolve_path(cls, value: Path | None) -> Path | None:
+        """相对后端根目录解析配置路径，返回规范化绝对路径。
+
+        Args:
+            value: 当前待校验、转换或写入的值。
+        """
         if value is None:
             return None
         expanded = value.expanduser()
@@ -75,6 +84,11 @@ class Settings(BaseSettings):
     @field_validator("llm_base_url")
     @classmethod
     def normalize_url(cls, value: str) -> str:
+        """校验并规范模型基础地址，拒绝远程明文 HTTP 和带凭证的 URL。
+
+        Args:
+            value: 当前待校验、转换或写入的值。
+        """
         base_url = value.strip().rstrip("/")
         if not base_url:
             return ""
@@ -101,6 +115,11 @@ class Settings(BaseSettings):
     @field_validator("llm_model")
     @classmethod
     def normalize_model_name(cls, value: str) -> str:
+        """清理模型标识首尾空白，不擅自替换服务商的模型名称。
+
+        Args:
+            value: 当前待校验、转换或写入的值。
+        """
         model_name = value.strip()
         return model_name
 
@@ -111,6 +130,7 @@ class Settings(BaseSettings):
 
     @property
     def missing_model_settings(self) -> list[str]:
+        """列出缺失配置的名称，不返回任何凭证值。"""
         values = {
             "LAW_LLM_API_KEY": self.llm_api_key.get_secret_value().strip(),
             "LAW_LLM_BASE_URL": self.llm_base_url,
@@ -120,9 +140,11 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> tuple[str, ...]:
+        """从逗号分隔配置生成允许来源列表，忽略空项。"""
         return tuple(origin.strip() for origin in self.cors_origins_csv.split(",") if origin.strip())
 
 
 @lru_cache
 def get_settings() -> Settings:
+    """缓存从环境变量和私有配置文件解析的类型化运行配置。"""
     return Settings()

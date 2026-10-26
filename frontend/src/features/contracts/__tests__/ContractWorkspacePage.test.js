@@ -1,3 +1,4 @@
+/** @file 验证本组件或状态模块的交互、异常和资源清理；不调用真实模型。 */
 import { mount, flushPromises } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ContractWorkspacePage from '../ContractWorkspacePage.vue'
@@ -5,6 +6,9 @@ import { contractApi } from '../contractApi'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn() }) }))
 vi.mock('../../../shared/authSession', () => ({
+  /**
+   * 返回测试使用的登录会话。
+   */
   getSession: () => ({ user: { username: '测试用户' } }),
   clearSession: vi.fn(),
 }))
@@ -27,6 +31,11 @@ vi.mock('../contractApi', () => ({
   ),
 }))
 
+/**
+ * 按可见文字触发测试按钮并等待 Vue 异步更新。
+ * @param {Object} wrapper Vue 组件测试包装器。
+ * @param {string} label 向用户展示的等待状态名称。
+ */
 const clickButton = async (wrapper, label) => {
   const button = wrapper.findAll('button').find((item) => item.text() === label)
   expect(button, `button ${label}`).toBeDefined()

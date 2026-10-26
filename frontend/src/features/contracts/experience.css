@@ -1,4 +1,43 @@
-/* Guidance and factual progress are independent of original Word layout. */
+/* @file 工作区引导、运行轨迹与审核布局；不改变原始 Word 的版面规则。 */
+/* 分组间用 margin，组内用 gap，避免给所有按钮加外边距而破坏工具栏对齐。 */
+.review-toolbar > .review-shortcuts {
+  margin-block: var(--cw-section-gap);
+  justify-content: flex-start;
+}
+.review-toolbar > .inline-actions:last-child {
+  margin-top: var(--cw-section-gap);
+}
+.ignore-unknown-tools,
+.bulk-blank-tools {
+  display: grid;
+  gap: var(--cw-control-gap);
+}
+.ignore-unknown-tools > p,
+.bulk-blank-tools > p {
+  margin: 0;
+}
+.ignore-unknown-tools > button,
+.bulk-blank-tools > button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+.preview-panel > .checkbox-label {
+  margin-top: var(--cw-section-gap);
+  align-items: flex-start;
+}
+.preview-panel > .checkbox-label input {
+  margin-top: 4px;
+}
+.generate-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cw-control-gap);
+}
+.pagination {
+  flex-wrap: wrap;
+  row-gap: var(--cw-control-gap);
+}
 .review-stat-strip {
   display: flex;
   flex-wrap: wrap;
@@ -127,7 +166,7 @@
 .ignore-unknown-tools label,
 .bulk-blank-tools label {
   display: block;
-  margin: 12px 0;
+  margin: 0;
 }
 .bulk-select {
   margin-bottom: 12px;

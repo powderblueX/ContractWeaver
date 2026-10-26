@@ -13,10 +13,14 @@ from app.model_client import ChatModel, ModelUnavailable
 
 
 class ConnectionCheckTests(IsolatedAsyncioTestCase):
+    """测试夹具或替身：ConnectionCheckTests，用于隔离验证本模块行为。"""
+
     async def test_probe_sends_synthetic_data_once(self):
+        """Verify probe sends synthetic data once."""
         requests = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             requests.append(request)
             payload = json.loads(request.content)
             self.assertIn("configuration_smoke_test", payload["messages"][1]["content"])
@@ -35,6 +39,7 @@ class ConnectionCheckTests(IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
 
     async def test_missing_key_fails_before_network(self):
+        """Verify missing key fails before network."""
         requests = []
         settings = Settings(
             _env_file=None,

@@ -1,4 +1,4 @@
-"""Dependency injection for database, settings and authenticated users."""
+"""接口依赖项。"""
 
 from functools import lru_cache
 
@@ -15,12 +15,14 @@ bearer = HTTPBearer(auto_error=False)
 
 @lru_cache
 def get_database() -> Database:
+    """返回数据库访问对象。"""
     return Database(get_settings().database_path)
 
 
 def current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Database = Depends(get_database)
 ) -> dict:
+    """验证访问令牌并返回当前账户。"""
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
     try:

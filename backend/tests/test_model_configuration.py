@@ -12,7 +12,10 @@ from app.model_client import ChatModel, ModelUnavailable
 
 
 class ModelSettingsTests(TestCase):
+    """测试夹具或替身：ModelSettingsTests，用于隔离验证本模块行为。"""
+
     def test_model_provider_must_be_explicitly_configured(self):
+        """Verify model provider must be explicitly configured."""
         settings = Settings(_env_file=None, llm_base_url="", llm_model="", llm_api_key=SecretStr(""))
         self.assertFalse(settings.model_configured)
         self.assertEqual(
@@ -20,31 +23,41 @@ class ModelSettingsTests(TestCase):
         )
 
     def test_remote_endpoint_requires_https(self):
+        """Verify remote endpoint requires https."""
         with self.assertRaises(ValidationError):
             Settings(_env_file=None, llm_base_url="http://models.example.com/v1")
 
     def test_loopback_endpoint_can_use_http(self):
+        """Verify loopback endpoint can use http."""
         settings = Settings(_env_file=None, llm_base_url="http://127.0.0.1:8001/v1")
         self.assertEqual(settings.llm_base_url, "http://127.0.0.1:8001/v1")
 
     def test_full_completion_url_is_rejected(self):
+        """Verify full completion url is rejected."""
         with self.assertRaises(ValidationError):
             Settings(_env_file=None, llm_base_url="https://models.example.com/v1/chat/completions")
 
     def test_generation_controls_are_validated(self):
+        """Verify generation controls are validated."""
         for options in ({"llm_thinking_mode": "automatic"}, {"llm_max_tokens": 0}, {"llm_temperature": 3}):
             with self.subTest(options=options), self.assertRaises(ValidationError):
                 Settings(_env_file=None, **options)
 
 
 class ChatModelTests(IsolatedAsyncioTestCase):
+    """测试夹具或替身：ChatModelTests，用于隔离验证本模块行为。"""
+
     async def test_missing_key_does_not_send_request(self):
+        """Verify missing key does not send request."""
         settings = Settings(_env_file=None, llm_api_key=SecretStr(""))
         with self.assertRaisesRegex(ModelUnavailable, "backend/.env|后端 .env"):
             await ChatModel(settings).complete([{"role": "user", "content": "测试"}])
 
     async def test_request_uses_backend_credential_and_json_mode(self):
+        """Verify request uses backend credential and json mode."""
+
         def respond(request: httpx.Request) -> httpx.Response:
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             self.assertEqual(str(request.url), "https://models.example.com/v1/chat/completions")
             self.assertEqual(request.headers["Authorization"], "Bearer test-only-key")
             payload = json.loads(request.content)
@@ -67,7 +80,10 @@ class ChatModelTests(IsolatedAsyncioTestCase):
         self.assertEqual(response["content"], "测试回复")
 
     async def test_deepseek_flash_uses_explicit_non_thinking_json_payload(self):
+        """Verify deepseek flash uses explicit non thinking json payload."""
+
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             self.assertEqual(str(request.url), "https://api.deepseek.com/chat/completions")
             self.assertEqual(request.headers["Authorization"], "Bearer test-only-key")
             payload = json.loads(request.content)
@@ -94,7 +110,10 @@ class ChatModelTests(IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(response["content"]), {"ok": True})
 
     async def test_enabled_thinking_does_not_send_temperature(self):
+        """Verify enabled thinking does not send temperature."""
+
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             payload = json.loads(request.content)
             self.assertEqual(payload["thinking"], {"type": "enabled"})
             self.assertNotIn("temperature", payload)
@@ -111,9 +130,11 @@ class ChatModelTests(IsolatedAsyncioTestCase):
             await ChatModel(settings, client).complete([])
 
     async def test_truncated_output_fails_without_repeating_paid_requests(self):
+        """Verify truncated output fails without repeating paid requests."""
         calls = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             calls.append(request)
             return httpx.Response(
                 200, json={"choices": [{"finish_reason": "length", "message": {"content": "{"}}]}
@@ -131,6 +152,7 @@ class ChatModelTests(IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
 
     async def test_upstream_auth_error_never_exposes_key(self):
+        """Verify upstream auth error never exposes key."""
         settings = Settings(
             _env_file=None,
             llm_api_key=SecretStr("test-only-key"),
@@ -144,9 +166,11 @@ class ChatModelTests(IsolatedAsyncioTestCase):
         self.assertNotIn("test-only-key", str(raised.exception))
 
     async def test_invalid_structured_output_is_retried_and_validated(self):
+        """Verify invalid structured output is retried and validated."""
         calls = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             payload = json.loads(request.content)
             calls.append(payload)
             content = (
@@ -173,6 +197,7 @@ class ChatModelTests(IsolatedAsyncioTestCase):
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
 
     async def test_invalid_structured_output_does_not_retry_indefinitely(self):
+        """Verify invalid structured output does not retry indefinitely."""
         settings = Settings(
             _env_file=None,
             llm_api_key=SecretStr("test-only-key"),
@@ -182,6 +207,7 @@ class ChatModelTests(IsolatedAsyncioTestCase):
         requests = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             requests.append(request)
             return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
 

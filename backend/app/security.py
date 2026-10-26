@@ -1,4 +1,4 @@
-"""Password hashing and revocable opaque bearer sessions."""
+"""密码与访问令牌工具。"""
 
 import base64
 import hmac
@@ -11,6 +11,7 @@ ITERATIONS = 600_000
 
 
 def hash_password(password: str) -> str:
+    """生成带盐密码哈希。"""
     salt = os.urandom(16)
     digest = pbkdf2_hmac("sha256", password.encode(), salt, ITERATIONS)
     return "pbkdf2_sha256$%d$%s$%s" % (
@@ -21,6 +22,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, encoded: str) -> bool:
+    """校验密码哈希。"""
     if encoded.startswith(("$2a$", "$2b$", "$2y$")):
         try:
             import bcrypt
@@ -39,10 +41,12 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def new_token(hours: int) -> tuple[str, str, str]:
+    """生成访问令牌、摘要和到期时间。"""
     token = secrets.token_urlsafe(32)
     expiry = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
     return token, sha256(token.encode()).hexdigest(), expiry
 
 
 def token_hash(token: str) -> str:
+    """生成访问令牌摘要。"""
     return sha256(token.encode()).hexdigest()

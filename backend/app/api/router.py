@@ -15,6 +15,7 @@ router.include_router(template_router)
 
 @router.get("/health", tags=["system"])
 def health():
+    """返回服务就绪状态与公开限制，不返回模型密钥。"""
     settings = get_settings()
     return {
         "status": "ok",

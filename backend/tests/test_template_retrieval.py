@@ -19,13 +19,17 @@ from app.services.template_retrieval import (
 
 
 class TemplateRetrievalTests(TestCase):
+    """测试夹具或替身：TemplateRetrievalTests，用于隔离验证本模块行为。"""
+
     def test_literal_requests_survive_model_omission_but_negation_and_questions_do_not(self):
+        """Verify literal requests survive model omission but negation and questions do not."""
         names = ["设备采购合同", "房屋租赁合同"]
         self.assertEqual(explicit_source_titles("需要《设备采购合同》。", names), {"设备采购合同"})
         self.assertEqual(explicit_source_titles("不需要设备采购合同，房屋租赁合同需要吗？", names), set())
         self.assertEqual(normalize_title("《设备采购合同》 （2025）"), "设备采购合同(2025)")
 
     def test_named_contract_is_prioritized_even_if_unrelated_query_or_blocked(self):
+        """Verify named contract is prioritized even if unrelated query or blocked."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             folder = root / "templates" / "Ministerial"
@@ -44,6 +48,7 @@ class TemplateRetrievalTests(TestCase):
             self.assertIn("暂不能自动填写", "".join(recommendations[0]["match_reasons"]))
 
     def test_specific_version_does_not_pin_other_versions(self):
+        """Verify specific version does not pin other versions."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             folder = root / "templates" / "Ministerial"
@@ -57,14 +62,17 @@ class TemplateRetrievalTests(TestCase):
             self.assertEqual([item["name"] for item in recommendations], ["设备采购合同（2025）"])
 
     def test_tokenization_supports_chinese_and_latin_identifiers(self):
+        """Verify tokenization supports chinese and latin identifiers."""
         self.assertEqual(tokenize("设备采购 GF-2025"), ["设备", "备采", "采购", "gf", "2025"])
 
     def test_bm25_uses_rare_terms_instead_of_only_overlap_counts(self):
+        """Verify bm25 uses rare terms instead of only overlap counts."""
         scores = bm25_scores("设备 质谱", ["设备采购合同", "设备租赁合同", "质谱设备采购"], RetrievalPolicy())
         self.assertGreater(scores[2], scores[0])
         self.assertGreater(scores[2], scores[1])
 
     def test_rrf_uses_both_lexical_and_vector_ranks_without_unknown_ids(self):
+        """Verify rrf uses both lexical and vector ranks without unknown ids."""
         records = [
             {"id": "one", "name": "设备采购合同", "keywords": "采购"},
             {"id": "two", "name": "机械买卖合同", "keywords": "设备采购"},
@@ -79,6 +87,7 @@ class TemplateRetrievalTests(TestCase):
         )
 
     def test_catalog_recommends_only_usable_matches_and_does_not_pad_to_five(self):
+        """Verify catalog recommends only usable matches and does not pad to five."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             folder = root / "templates" / "Ministerial"

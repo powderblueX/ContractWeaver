@@ -1,3 +1,4 @@
+<!-- @file 纪要草稿及上传解析，不把文件直接发送给模型。 -->
 <script setup>
 import { ref } from 'vue'
 import { contractApi } from '../contractApi'
@@ -14,6 +15,10 @@ const sourceText = ref('')
 const importing = ref(false)
 const importError = ref('')
 
+/**
+ * 限制文件大小后调用解析接口，把返回纪要放入草稿并清理文件输入状态。
+ * @param {Event} event 浏览器文件或页面生命周期事件。
+ */
 async function importFile(event) {
   const file = event.target.files?.[0]
   if (!file) return
@@ -36,6 +41,9 @@ async function importFile(event) {
   }
 }
 
+/**
+ * 提交任务名称与原始纪要，不在浏览器中直接调用模型。
+ */
 function submitSource() {
   emit('create', {
     title: title.value.trim() || '新的合同任务',

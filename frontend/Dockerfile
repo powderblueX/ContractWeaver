@@ -1,3 +1,4 @@
+# Build the SPA, then serve only public artifacts through Nginx; never copy backend secrets.
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

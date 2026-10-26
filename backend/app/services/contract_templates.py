@@ -28,16 +28,21 @@ GROUPS = {"Ministerial": "部委", "Regional": "地方"}
 
 @dataclass(frozen=True)
 class ContractTemplate:
+    """记录原件标识、分类及受控路径的模板元数据。"""
+
     id: str
     name: str
     group: str
     path: Path
 
     def public(self) -> dict:
+        """构建可对客户端公开的模板元数据，不暴露本地绝对路径。"""
         return {"id": self.id, "name": self.name, "group": GROUPS[self.group]}
 
 
 class ContractTemplateCatalog:
+    """管理原始模板、检索、结构编译、预览和定点写入的业务目录。"""
+
     def __init__(
         self,
         resources: Path,
@@ -45,6 +50,14 @@ class ContractTemplateCatalog:
         embedding_path: Path | None = None,
         retrieval_policy: RetrievalPolicy | None = None,
     ):
+        """注入依赖并初始化本实例的状态，保持资源所有权与其他请求隔离。
+
+        Args:
+            resources: 受控的原始模板资源根目录。
+            generated: 生成合同的配置目录。
+            embedding_path: 可选本地向量模型目录；缺省时不启用向量召回。
+            retrieval_policy: 候选池、通道权重及融合参数。
+        """
         self.resources = resources
         self.generated = generated
         self.embedding_path = embedding_path
@@ -73,6 +86,13 @@ class ContractTemplateCatalog:
         self._templates = templates
 
     def list_templates(self, group: str | None = None, query: str = "", limit: int = 30) -> list[dict]:
+        """按公开筛选条件分页列出模板，避免把资源目录暴露为任意文件浏览器。
+
+        Args:
+            group: 模板分类筛选值。
+            query: 聚焦业务类型的检索词，不应包含当事人隐私。
+            limit: 结果数量上限，仍受服务端范围约束。
+        """
         if not self._templates:
             self.refresh()
         items = self._templates.values()
@@ -116,6 +136,11 @@ class ContractTemplateCatalog:
         }
 
     def get_template(self, template_id: str) -> ContractTemplate:
+        """从受控目录中取得已发现模板，未知标识按业务错误拒绝。
+
+        Args:
+            template_id: 模板目录中的受控标识。
+        """
         if not self._templates:
             self.refresh()
         template = self._templates.get(template_id)
@@ -124,6 +149,11 @@ class ContractTemplateCatalog:
         return template
 
     def describe_template(self, template_id: str) -> dict:
+        """编译原件候选位置，汇总字段上下文、结构安全提示及引擎指纹。
+
+        Args:
+            template_id: 模板目录中的受控标识。
+        """
         template = self.get_template(template_id)
         document, compilation = self._compiled_document(template)
         paragraph_objects = list(iter_visible_document_paragraphs(document))
@@ -218,6 +248,13 @@ class ContractTemplateCatalog:
     def preview_contract(
         self, template_id: str, values: dict[str, str], omitted_fields: list[str] | None = None
     ) -> dict:
+        """基于审核值替换临时位置标识，并按段落和表格生成文字预览。
+
+        Args:
+            template_id: 模板目录中的受控标识。
+            values: 已确认或待校验的字段名到值映射。
+            omitted_fields: 用户已明确决定保留原始空白的位置名。
+        """
         template = self.get_template(template_id)
         document, compilation = self._compiled_document(template)
         paragraph_objects = tuple(iter_visible_document_paragraphs(document))
@@ -265,6 +302,11 @@ class ContractTemplateCatalog:
 
     @staticmethod
     def _compiled_document(template: ContractTemplate):
+        """读取原件并在内存中建立填写位置，检查编译未破坏图形或媒体。
+
+        Args:
+            template: 从受控目录发现的原始模板。
+        """
         from docx import Document
 
         document = Document(template.path)
@@ -363,18 +405,34 @@ class ContractTemplateCatalog:
         return recommendations
 
     def _keywords(self, template: ContractTemplate) -> str:
+        """按模板所属分类读取其业务关键词侧文件。
+
+        Args:
+            template: 从受控目录发现的原始模板。
+        """
         path = self.resources / "templates" / template.group / "关键词" / f"{template.name}.txt"
         return self._read_keywords(str(path))
 
     @staticmethod
     @lru_cache(maxsize=1024)
     def _read_keywords(path: str) -> str:
+        """有界读取关键词文本；缺失侧文件时回退为空关键词。
+
+        Args:
+            path: 经过配置或受控目录约束的资源路径。
+        """
         try:
             return Path(path).read_text(encoding="utf-8")[:1000]
         except OSError:
             return ""
 
     def _vector_candidates(self, query: str, group: str | None) -> dict[tuple[str, str], float]:
+        """仅在配置本地模型时执行可选向量召回；不可用时回退到词法检索。
+
+        Args:
+            query: 聚焦业务类型的检索词，不应包含当事人隐私。
+            group: 模板分类筛选值。
+        """
         if not self.embedding_path:
             return {}
         try:
@@ -406,6 +464,11 @@ class ContractTemplateCatalog:
     @staticmethod
     @lru_cache(maxsize=2)
     def _embedding_model(path: str):
+        """缓存仅从本地加载的 embedding 模型，不隐式下载模型资源。
+
+        Args:
+            path: 经过配置或受控目录约束的资源路径。
+        """
         from sentence_transformers import SentenceTransformer
 
         return SentenceTransformer(path, local_files_only=True)

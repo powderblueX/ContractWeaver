@@ -1,3 +1,4 @@
+<!-- @file 合同工作区页面编排、导航和未保存内容保护。 -->
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -111,6 +112,9 @@ const nextStep = computed(() => {
     action: 'preview',
   }
 })
+/**
+ * 根据当前任务状态执行下一项用户明确触发的操作。
+ */
 async function continueWorkflow() {
   if (nextStep.value.action === 'reload-template') return selectTemplate(workspace.value.selected_template)
   if (nextStep.value.action === 'analyze') return analyzeRecord()
@@ -119,9 +123,15 @@ async function continueWorkflow() {
   if (activeTab.value === 'preview') await workflow.loadPreview()
 }
 
+/**
+ * 在离开审核草稿前询问是否放弃未保存修改。
+ */
 function confirmDiscard() {
   return !hasUnsavedFields.value || window.confirm('有尚未保存的字段修改，确定离开并放弃这些修改？')
 }
+/**
+ * 核对未保存修改后切换到新的纪要导入界面。
+ */
 function newWorkspace() {
   if (!busy.value && confirmDiscard()) {
     workflow.reset()
@@ -129,6 +139,10 @@ function newWorkspace() {
     activeTab.value = 'record'
   }
 }
+/**
+ * 核对未保存修改后加载用户选择的任务。
+ * @param {string} id 任务或生成文件的受控标识。
+ */
 async function openWorkspace(id) {
   if (busy.value || !confirmDiscard()) return
   const result = await workflow.open(id)
@@ -145,12 +159,23 @@ async function openWorkspace(id) {
             : 'record'
   }
 }
+/**
+ * 保存导入内容并把操作引导切换到新任务。
+ * @param {Object} source 任务名称与原始纪要载荷。
+ */
 async function createWorkspace(source) {
   if (await workflow.create(source)) activeTab.value = 'record'
 }
+/**
+ * 发起记录分析与模板检索，完成后切换到模板选择页。
+ */
 async function analyzeRecord() {
   if (await workflow.analyze()) activeTab.value = 'templates'
 }
+/**
+ * 提交用户明确选择的模板及当前修订，不自动批准填写内容。
+ * @param {Object} template 用户选择的模板元数据。
+ */
 async function selectTemplate(template) {
   if (
     workspace.value.selected_template?.id === template.id &&
@@ -167,6 +192,10 @@ async function selectTemplate(template) {
     activeTab.value = 'review'
   }
 }
+/**
+ * 核对覆盖风险后请求字段提取，完成后进入人工审核。
+ * @param {boolean} retryFailed 是否仅重试未审核的失败字段。
+ */
 async function extractFields(retryFailed = false) {
   const reviewed = workspace.value.fields.some((field) => ['confirmed', 'omitted'].includes(field.status))
   if (
@@ -178,12 +207,24 @@ async function extractFields(retryFailed = false) {
   if (retryFailed && hasUnsavedFields.value && !confirmDiscard()) return
   if (await workflow.extract(!retryFailed && reviewed, retryFailed)) hasUnsavedFields.value = false
 }
+/**
+ * 保存用户提交的字段决定并清理对应未保存提示。
+ * @param {Array<Object>} decisions 用户提交的确认、修改或留空决定。
+ */
 async function saveFields(decisions) {
   await workflow.review(decisions)
 }
+/**
+ * 提交当前预览版本的导出确认，生成后保留历史文件入口。
+ * @param {Object} approval 用户预览及视觉核对的确认结果。
+ */
 async function generateContract(approval = {}) {
   if (await workflow.generate(Boolean(approval.visualReviewAcknowledged))) hasUnsavedFields.value = false
 }
+/**
+ * 要求明确确认后删除任务，避免误删用户合同记录。
+ * @param {Object} task 待删除且需核对归属的任务摘要。
+ */
 async function removeWorkspace(task) {
   if (busy.value || !window.confirm(`删除“${task.title}”及其协商记录、审核结果和已生成文件？`)) return
   if (await workflow.remove(task.id)) {
@@ -193,20 +234,34 @@ async function removeWorkspace(task) {
     }
   }
 }
+/**
+ * 读取用户输入的新任务名称并提交修订更新。
+ */
 async function renameWorkspace() {
   const title = window.prompt('合同任务名称', workspace.value.title)?.trim()
   if (title && title !== workspace.value.title) await workflow.rename(title)
 }
+/**
+ * 切换到原文视图并定位被引用行，帮助用户核验依据。
+ * @param {number} line 需要定位核验的原始纪要行号。
+ */
 async function showSource(line) {
   activeTab.value = 'record'
   highlightedLine.value = line
   await nextTick()
   document.getElementById(`source-line-${line}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
+/**
+ * 下载指定历史版本，不隐式重新生成合同。
+ * @param {string} id 任务或生成文件的受控标识。
+ */
 async function downloadArtifact(id) {
   if (busy.value) return
   await workflow.download(id)
 }
+/**
+ * 退出当前登录会话。
+ */
 async function logout() {
   if (!confirmDiscard()) return
   try {
@@ -216,6 +271,10 @@ async function logout() {
     router.replace('/login')
   }
 }
+/**
+ * 存在未保存审核时触发浏览器离开提醒。
+ * @param {Event} event 浏览器页面生命周期事件。
+ */
 function beforeUnload(event) {
   if (hasUnsavedFields.value) {
     event.preventDefault()

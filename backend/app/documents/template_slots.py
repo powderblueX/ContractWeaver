@@ -12,6 +12,7 @@ from app.documents.word_compatibility import inspect_compatibility
 from app.documents.word_documents import iter_document_paragraphs
 from app.documents.word_text import TEXT_TAG, paragraph_atoms, paragraph_text, replace_text_ranges
 
+# 修改识别语义时必须升级此值，使旧任务不能继续用过期位置映射写回原件。
 SLOT_ENGINE_VERSION = "typed-text-slots-20261022"
 BLANK_PATTERN = re.compile(r"[_＿﹍﹎]{2,}|[…⋯]{2,}|(?<=\S)[ \u3000\u00a0]{2,}(?=\S)")
 MARKER_PATTERN = re.compile(r"\{[^{}]+\}")
@@ -19,6 +20,8 @@ MARKER_PATTERN = re.compile(r"\{[^{}]+\}")
 
 @dataclass(frozen=True)
 class SlotCompilation:
+    """保存内存编译产生的位置、原始空白、类型约束和安全结论。"""
+
     generated_slots: int
     unsupported: tuple[str, ...]
     original_blanks: dict[str, str]
@@ -43,6 +46,11 @@ def compile_template_slots(document) -> SlotCompilation:
     field_specs = {}
 
     def unique_name(name):
+        """为当前原件生成不与已有字段重名的内部定位标识。
+
+        Args:
+            name: 字段、步骤或模板的受控名称。
+        """
         while name in existing_names:
             name += "·"
         existing_names.add(name)

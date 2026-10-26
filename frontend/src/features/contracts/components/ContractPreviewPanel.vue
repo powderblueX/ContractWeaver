@@ -1,3 +1,4 @@
+<!-- @file 当前修订的合同文字预览、人工确认与历史文件下载。 -->
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { readableText } from '../fieldPresentation'

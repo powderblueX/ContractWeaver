@@ -1,7 +1,13 @@
+/** @file 验证本组件或状态模块的交互、异常和资源清理；不调用真实模型。 */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import FieldReviewPanel from '../components/FieldReviewPanel.vue'
 
+/**
+ * 创建独立字段测试夹具，避免把服务端任务当作共享可变对象。
+ * @param {string} name 夹具使用的字段名称。
+ * @param {string} value 当前候选或输入值。
+ */
 const makeField = (name, value) => ({
   name,
   value,

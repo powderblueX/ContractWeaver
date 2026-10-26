@@ -1,4 +1,4 @@
-"""Account HTTP endpoints; authentication behavior is delegated to services."""
+"""账户认证接口。"""
 
 import sqlite3
 
@@ -15,11 +15,13 @@ router = APIRouter(prefix="/auth", tags=["accounts"])
 
 
 def account_service(database: Database) -> AccountService:
+    """组装账户服务。"""
     return AccountService(AccountRepository(database), get_settings())
 
 
 @router.post("/register", status_code=201)
 def register(request: RegisterRequest, database: Database = Depends(get_database)):
+    """创建邮箱账户。"""
     try:
         return account_service(database).register(str(request.email), request.password)
     except sqlite3.IntegrityError as exc:
@@ -30,6 +32,7 @@ def register(request: RegisterRequest, database: Database = Depends(get_database
 
 @router.post("/login")
 def login(request: LoginRequest, database: Database = Depends(get_database)):
+    """验证邮箱密码并签发访问令牌。"""
     try:
         return account_service(database).login(str(request.email), request.password)
     except AuthenticationFailed as exc:
@@ -42,10 +45,12 @@ def logout(
     database: Database = Depends(get_database),
     credentials=Depends(bearer),
 ):
+    """注销当前会话。"""
     account_service(database).logout(credentials.credentials, user["id"])
     return {"ok": True}
 
 
 @router.get("/me")
 def authenticated_account(user: dict = Depends(current_user)):
+    """返回当前账户。"""
     return user

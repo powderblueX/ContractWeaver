@@ -21,6 +21,16 @@ def browse_templates(
     user: dict = Depends(current_user),
     catalog: ContractTemplateCatalog = Depends(get_template_catalog),
 ):
+    """按分类、检索词和分页浏览原始模板库，不自动替用户选定。
+
+    Args:
+        group: 模板分类筛选值。
+        query: 聚焦业务类型的检索词，不应包含当事人隐私。
+        offset: 分页起点。
+        limit: 结果数量上限，仍受服务端范围约束。
+        user: 认证后的账户公开身份。
+        catalog: 受控的原始模板目录及检索/写入服务。
+    """
     return catalog.browse_templates(group, query, offset, limit)
 
 
@@ -30,6 +40,13 @@ def get_template_details(
     user: dict = Depends(current_user),
     catalog: ContractTemplateCatalog = Depends(get_template_catalog),
 ):
+    """返回结构填写能力、字段元数据和需要人工核对的提示。
+
+    Args:
+        template_id: 模板目录中的受控标识。
+        user: 认证后的账户公开身份。
+        catalog: 受控的原始模板目录及检索/写入服务。
+    """
     try:
         return catalog.describe_template(template_id)
     except ValueError as exc:
@@ -42,6 +59,13 @@ def download_template(
     user: dict = Depends(current_user),
     catalog: ContractTemplateCatalog = Depends(get_template_catalog),
 ):
+    """下载未改动的原始模板；下载不代表该原件支持自动填写。
+
+    Args:
+        template_id: 模板目录中的受控标识。
+        user: 认证后的账户公开身份。
+        catalog: 受控的原始模板目录及检索/写入服务。
+    """
     try:
         template = catalog.get_template(template_id)
     except ValueError as exc:
@@ -59,6 +83,13 @@ def download_contract(
     user: dict = Depends(current_user),
     service: ContractWorkflowService = Depends(get_workflow_service),
 ):
+    """校验文件归属后下载已生成合同，不允许按任意路径读取文件。
+
+    Args:
+        contract_id: 已生成合同的受控标识。
+        user: 认证后的账户公开身份。
+        service: 依赖注入的业务服务。
+    """
     record = service.repository.find_artifact(contract_id, user["id"])
     if record is None:
         raise HTTPException(status_code=404, detail="合同文件不存在")

@@ -11,10 +11,25 @@ from app.model_client import ModelUnavailable
 
 
 class SupervisorAgent:
+    """依据当前允许动作和工具观察作出结构化下一步决策的主控角色。"""
+
     def __init__(self, model):
+        """注入依赖并初始化本实例的状态，保持资源所有权与其他请求隔离。
+
+        Args:
+            model: 当前模型适配器或模型标识，不能包含密钥。
+        """
         self.model = model
 
     async def decide(self, phase, source_lines, observations, allowed_actions):
+        """根据当前观察选择允许动作，并再次校验动作与参数的匹配关系。
+
+        Args:
+            phase: 主控当前处理的检索或字段审核阶段。
+            source_lines: 带服务器行号的原始纪要，是逐字证据的核验来源。
+            observations: 主控可读取的工具结果、候选问题及剩余预算。
+            allowed_actions: 由协调器按当前状态授予的动作白名单。
+        """
         schema = create_model(
             "AllowedSupervisorDecision",
             __base__=SupervisorDecision,

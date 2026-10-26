@@ -1,3 +1,4 @@
+# Package the API and original templates; runtime configuration is injected separately.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1

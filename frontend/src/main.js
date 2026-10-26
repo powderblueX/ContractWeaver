@@ -1,3 +1,4 @@
+/** @file 创建 Vue 应用并安装路由及公共样式。 */
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'

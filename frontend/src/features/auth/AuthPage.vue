@@ -1,3 +1,4 @@
+<!-- @file 邮箱注册与登录页面。 -->
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -11,6 +12,7 @@ const password = ref('')
 const busy = ref(false)
 const error = ref('')
 
+/** 提交注册或登录请求。 */
 async function submitCredentials() {
   if (busy.value) return
   const credentials = { email: email.value.trim(), password: password.value }

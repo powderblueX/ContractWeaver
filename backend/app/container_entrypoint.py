@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 def main() -> None:
+    """加载容器配置并按入口策略启动服务，避免把服务长期以高权限运行。"""
     if not sys.argv[1:]:
         raise SystemExit("A server command is required")
     source = Path(os.environ.get("LAW_ENV_FILE", "/run/secrets/backend_environment"))

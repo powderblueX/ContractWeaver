@@ -17,6 +17,12 @@ from app.services.contract_templates import ContractTemplateCatalog
 
 
 def audit_catalog(catalog: ContractTemplateCatalog, *, progress: bool = False) -> dict:
+    """在内存中用唯一哨兵值审计模板结构写入能力，不调用 LLM 或改动原件。
+
+    Args:
+        catalog: 受控的原始模板目录及检索/写入服务。
+        progress: 可选的执行进度通知对象。
+    """
     result = {
         "total": 0,
         "fillable": 0,

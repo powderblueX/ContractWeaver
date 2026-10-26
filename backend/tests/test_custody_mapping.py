@@ -20,7 +20,10 @@ from app.services.contract_templates import ContractTemplateCatalog
 
 
 class CoverageAgentTests(IsolatedAsyncioTestCase):
+    """测试夹具或替身：CoverageAgentTests，用于隔离验证本模块行为。"""
+
     async def test_over_budget_payload_is_not_silently_truncated_or_sent(self):
+        """Verify over budget payload is not silently truncated or sent."""
         model = AsyncMock()
         agent = ContractCoverageAgent(model, max_context_chars=10)
         with self.assertRaises(ModelUnavailable):
@@ -28,6 +31,7 @@ class CoverageAgentTests(IsolatedAsyncioTestCase):
         model.generate_structured.assert_not_awaited()
 
     async def test_coverage_sees_all_fields_and_existing_values_in_one_pass(self):
+        """Verify coverage sees all fields and existing values in one pass."""
         model = AsyncMock()
         model.generate_structured.return_value = CoverageResult()
         fields = [{"name": "名称", "context": "物品：{名称}"}, {"name": "其他", "context": "其他：{其他}"}]
@@ -43,7 +47,10 @@ class CoverageAgentTests(IsolatedAsyncioTestCase):
 
 
 class CustodyMappingTests(TestCase):
+    """测试夹具或替身：CustodyMappingTests，用于隔离验证本模块行为。"""
+
     def setUp(self):
+        """准备隔离测试资源，避免访问生产数据库和真实模型。"""
         self.temporary = TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.resources = Path(__file__).resolve().parents[1] / "resources" / "contracts"
@@ -54,12 +61,14 @@ class CustodyMappingTests(TestCase):
         self.details = self.catalog.describe_template(self.template["id"])
 
     def test_tab_definitions_are_not_document_content(self):
+        """Verify tab definitions are not document content."""
         document = Document()
         paragraph = document.add_paragraph("保管人：\t")
         paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(2), WD_TAB_ALIGNMENT.LEFT)
         self.assertEqual(paragraph_text(paragraph), "保管人：\t")
 
     def test_real_template_has_no_duplicate_label_blanks_or_heading_inputs(self):
+        """Verify real template has no duplicate label blanks or heading inputs."""
         fields = self.details["fields"]
         for label in ("保管物名称", "性质", "数量", "价值", "保管场所", "保管方法"):
             self.assertEqual(sum(field["display_name"] == label for field in fields), 1, label)
@@ -69,6 +78,7 @@ class CustodyMappingTests(TestCase):
         self.assertEqual(sum(field.get("value_type") == "money_upper" for field in fields), 1)
 
     def test_model_sees_one_active_slot_and_explicit_date_components(self):
+        """Verify model sees one active slot and explicit date components."""
         fields = [field for field in self.details["fields"] if field.get("value_type") == "date_part"]
         _, payload = model_fields(fields)
         for field in payload:
@@ -77,6 +87,7 @@ class CustodyMappingTests(TestCase):
             self.assertNotIn("·位置", field["context"])
 
     def test_dates_options_and_uppercase_units_reject_malformed_values(self):
+        """Verify dates options and uppercase units reject malformed values."""
         for field in self.details["fields"]:
             kind = field.get("value_type")
             bad = (
@@ -101,6 +112,7 @@ class CustodyMappingTests(TestCase):
             validate_slot_values(fields, values)
 
     def test_reviewed_custody_facts_render_once_and_fixed_text_is_preserved(self):
+        """Verify reviewed custody facts render once and fixed text is preserved."""
         values = {}
         known = {
             "保管人": "安澜保管测试有限公司",

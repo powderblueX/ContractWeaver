@@ -69,16 +69,25 @@ CREATE INDEX IF NOT EXISTS idx_contract_agent_history
 
 
 class Database:
+    """管理 SQLite 短连接、事务边界及向后兼容表结构初始化。"""
+
     def __init__(self, path: Path):
+        """注入依赖并初始化本实例的状态，保持资源所有权与其他请求隔离。
+
+        Args:
+            path: 经过配置或受控目录约束的资源路径。
+        """
         self.path = path
 
     def initialize(self) -> None:
+        """创建数据目录及缺失表结构，保留既有账户、任务和合同记录。"""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as conn:
             conn.executescript(SCHEMA)
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
+        """创建启用外键的短连接，成功提交、异常回滚并最终关闭。"""
         conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")

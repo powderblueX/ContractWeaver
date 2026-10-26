@@ -18,7 +18,10 @@ from app.services.contract_templates import ContractTemplateCatalog
 
 
 class ReadablePreviewTests(TestCase):
+    """测试夹具或替身：ReadablePreviewTests，用于隔离验证本模块行为。"""
+
     def test_empty_columns_are_preserved_under_their_original_headers(self):
+        """Verify empty columns are preserved under their original headers."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             folder = root / "templates" / "Ministerial"
@@ -38,7 +41,10 @@ class ReadablePreviewTests(TestCase):
 
 
 class OperationExperienceTests(IsolatedAsyncioTestCase):
+    """测试夹具或替身：OperationExperienceTests，用于隔离验证本模块行为。"""
+
     def settings(self):
+        """创建不读取私有密钥的测试配置。"""
         return Settings(
             _env_file=None,
             llm_api_key="synthetic-test",
@@ -48,9 +54,11 @@ class OperationExperienceTests(IsolatedAsyncioTestCase):
         )
 
     async def test_short_ids_restore_word_names_and_invalid_ids_get_bounded_repair(self):
+        """Verify short ids restore word names and invalid ids get bounded repair."""
         requests = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             requests.append(json.loads(request.content))
             name = "错误的业务名称" if len(requests) == 1 else "f001"
             return httpx.Response(
@@ -107,6 +115,7 @@ class OperationExperienceTests(IsolatedAsyncioTestCase):
             current_operation.reset(token)
 
     async def test_failed_http_request_is_counted_without_claiming_a_response_success(self):
+        """Verify failed http request is counted without claiming a response success."""
         identifier = uuid4().hex
         operations.start(identifier, "analyze", "test-model")
         token = current_operation.set(identifier)
@@ -126,7 +135,10 @@ class OperationExperienceTests(IsolatedAsyncioTestCase):
             current_operation.reset(token)
 
     async def test_review_can_report_multiple_findings_for_one_short_id(self):
+        """Verify review can report multiple findings for one short id."""
+
         def respond(_):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             return httpx.Response(
                 200,
                 json={

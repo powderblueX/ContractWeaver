@@ -1,3 +1,4 @@
+<!-- @file 真实执行进度、能力清单、主控所选动作和简短决策摘要。 -->
 <script setup>
 import { computed } from 'vue'
 const props = defineProps({ label: String, elapsed: Number, activity: Object, warning: String })

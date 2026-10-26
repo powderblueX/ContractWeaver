@@ -12,6 +12,8 @@ from app.observability import operations
 
 @dataclass
 class FieldCoordinationResult:
+    """携带一批最近完成复核的候选、补充问题、降级提示和已完成修正轮数。"""
+
     fields: list[ReviewedField]
     questions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -19,11 +21,26 @@ class FieldCoordinationResult:
 
 
 class FieldCoordinator:
+    """组织提取、独立复核和受限定向修正的批次协调器。"""
+
     def __init__(self, team, settings):
+        """注入依赖并初始化本实例的状态，保持资源所有权与其他请求隔离。
+
+        Args:
+            team: 共享连接、角色上下文隔离的 Agent 团队。
+            settings: 已解析的运行配置，包含路径、模型及预算；不得公开密钥。
+        """
         self.team = team
         self.settings = settings
 
     async def _review(self, source_lines, specs, fields):
+        """独立调用复核角色，并将检查意见合并到本轮候选。
+
+        Args:
+            source_lines: 带服务器行号的原始纪要，是逐字证据的核验来源。
+            specs: 本批候选填写处的类型及定位约束。
+            fields: 本次操作关联的字段集合。
+        """
         review = await run_step(
             "review_fields",
             lambda: self.team.review.review(
@@ -33,6 +50,13 @@ class FieldCoordinator:
         apply_review(fields, review)
 
     async def run(self, source_lines, specs, batch_index):
+        """先完成提取与复核，再由主控选择修正或交人工；修正失败保留已复核候选。
+
+        Args:
+            source_lines: 带服务器行号的原始纪要，是逐字证据的核验来源。
+            specs: 本批候选填写处的类型及定位约束。
+            batch_index: 从零开始的内部批次索引。
+        """
         operations.batch(batch_index, "extracting", "正在从记录提取填写内容")
         extraction = await run_step(
             "extract_fields", lambda: self.team.extraction.extract(source_lines, specs)
@@ -44,6 +68,7 @@ class FieldCoordinator:
         # Each iteration ends in a model decision, a tool observation, or human handoff.
         for _ in range(self.settings.supervisor_max_repairs + 1):
             eligible = [item for item in result.fields if repairable(item)]
+            # 每轮只给问题字段生成新的批内短编号，禁止借修正动作改写无关或人工审核项。
             eligible_specs = [spec for spec in specs if any(item.name == spec["name"] for item in eligible)]
             mapping, descriptions = model_fields(eligible_specs)
             observations = {

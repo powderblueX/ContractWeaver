@@ -12,6 +12,11 @@ from app.database import Database
 
 
 def migrate(source: Path | None = None) -> dict[str, int]:
+    """幂等导入旧版用户、会话和聊天消息；保持来源数据库不变。
+
+    Args:
+        source: 旧版 SQLite 数据库路径；迁移前应备份目标数据库。
+    """
     source = source or BASE_DIR / "data" / "legacy_shared_db.db"
     if not source.is_file():
         raise FileNotFoundError(source)

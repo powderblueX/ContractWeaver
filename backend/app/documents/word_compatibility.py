@@ -12,12 +12,19 @@ ALTERNATE_TAG = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Al
 
 @dataclass(frozen=True)
 class CompatibilityMap:
+    """记录可同步的 Word 兼容分支和应隐藏的重复段落。"""
+
     mirrors: dict
     alias_elements: frozenset
     blockers: tuple[str, ...]
 
 
 def inspect_compatibility(paragraphs: list) -> CompatibilityMap:
+    """检查 Word 新旧兼容分支，只有文字一致时才允许同步填写。
+
+    Args:
+        paragraphs: 按实际文档顺序遍历的 Word 段落集合。
+    """
     by_element = {paragraph._p: paragraph for paragraph in paragraphs}
     roots = {element.getroottree().getroot() for element in by_element}
     mirrors, aliases, blockers = {}, set(), []

@@ -1,3 +1,4 @@
+<!-- @file 推荐候选与完整模板目录，保留用户自主选择入口。 -->
 <script setup>
 import { onMounted, ref } from 'vue'
 import { contractApi } from '../contractApi'
@@ -20,8 +21,13 @@ const detail = ref(null)
 const inspectingId = ref(null)
 const downloading = ref(false)
 let browseSequence = 0
+// 单调序号使较早的查询响应无法覆盖用户刚提交的新筛选。
 let detailSequence = 0
 
+/**
+ * 按分页筛选读取模板，利用请求序号丢弃过时响应。
+ * @param {boolean} reset 是否把模板目录分页重置到首页。
+ */
 async function browse(reset = false) {
   if (reset) offset.value = 0
   const sequence = ++browseSequence
@@ -44,6 +50,10 @@ async function browse(reset = false) {
   }
 }
 
+/**
+ * 读取结构支持情况及预览说明，避免迟到响应覆盖当前选择。
+ * @param {Object} template 用户检查或选择的模板元数据。
+ */
 async function inspectTemplate(template) {
   const sequence = ++detailSequence
   error.value = ''
@@ -58,6 +68,9 @@ async function inspectTemplate(template) {
   }
 }
 
+/**
+ * 下载当前详情对应的未改动原件，并维护独立下载等待状态。
+ */
 async function downloadOriginal() {
   downloading.value = true
   try {
@@ -69,10 +82,18 @@ async function downloadOriginal() {
   }
 }
 
+/**
+ * 通知父页面明确选择该原件，然后关闭当前详情。
+ * @param {Object} template 用户检查或选择的模板元数据。
+ */
 function chooseTemplate(template) {
   emit('select', template)
   detail.value = null
 }
+/**
+ * 更新目录偏移并重新查询模板，不影响已选模板。
+ * @param {number} direction 分页移动方向。
+ */
 function changePage(direction) {
   offset.value += direction * 24
   browse()

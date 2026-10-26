@@ -1,4 +1,8 @@
+/* @file 全站字体、认证页、通用按钮和共享间距令牌。 */
 :root {
+  /* 控件与分组间距的唯一公共尺度；具体布局仍由所属组件决定。 */
+  --cw-control-gap: 12px;
+  --cw-section-gap: 16px;
   font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   color: #1d2d2b;
   background: #f7f9f7;

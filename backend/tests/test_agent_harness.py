@@ -21,11 +21,15 @@ from app.repositories.contract_workspaces import ContractWorkspaceRepository
 
 
 class HarnessTests(IsolatedAsyncioTestCase):
+    """测试夹具或替身：HarnessTests，用于隔离验证本模块行为。"""
+
     async def test_model_selected_action_is_persisted_in_harness_trace(self):
+        """Verify model selected action is persisted in harness trace."""
         runtime = self.runtime()
         token = current_run.set(runtime)
 
         def respond(_):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             return httpx.Response(
                 200,
                 json={
@@ -62,6 +66,7 @@ class HarnessTests(IsolatedAsyncioTestCase):
         self.assertEqual(saved["requests_started"], 1)
 
     def setUp(self):
+        """准备隔离测试资源，避免访问生产数据库和真实模型。"""
         self.temporary = TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.database = Database(Path(self.temporary.name) / "test.db")
@@ -88,11 +93,13 @@ class HarnessTests(IsolatedAsyncioTestCase):
         )
 
     def runtime(self, settings=None):
+        """Exercise runtime within this isolated test scenario."""
         return ContractHarness(
             settings or self.settings, self.database, "workspace", 1, 1, "extract", lambda **_: None
         )
 
     async def test_reasoning_configuration_summary_usage_and_no_raw_cot_in_journal(self):
+        """Verify reasoning configuration summary usage and no raw cot in journal."""
         settings = self.settings.model_copy(
             update={"llm_thinking_mode": "enabled", "llm_reasoning_effort": "high"}
         )
@@ -100,6 +107,7 @@ class HarnessTests(IsolatedAsyncioTestCase):
         payloads = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             payloads.append(json.loads(request.content))
             return httpx.Response(
                 200,
@@ -143,11 +151,13 @@ class HarnessTests(IsolatedAsyncioTestCase):
         self.assertEqual(AgentRunRepository(self.database).list("workspace", 2), [])
 
     async def test_request_budget_is_shared_by_parallel_steps_before_http(self):
+        """Verify request budget is shared by parallel steps before http."""
         settings = self.settings.model_copy(update={"harness_max_requests": 1})
         runtime = self.runtime(settings)
         requests = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             requests.append(request)
             return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
 
@@ -167,6 +177,7 @@ class HarnessTests(IsolatedAsyncioTestCase):
         self.assertEqual(len(runtime.snapshot["steps"]), 2)
 
     async def test_input_and_tool_boundaries_do_not_execute_callback(self):
+        """Verify input and tool boundaries do not execute callback."""
         runtime = self.runtime()
         with self.assertRaises(HarnessLimitExceeded):
             runtime.reserve_request(self.settings.harness_max_input_chars + 1)
@@ -176,11 +187,13 @@ class HarnessTests(IsolatedAsyncioTestCase):
         self.assertEqual(runtime.snapshot["model_requests"], 0)
 
     async def test_structured_retries_cannot_bypass_request_budget(self):
+        """Verify structured retries cannot bypass request budget."""
         settings = self.settings.model_copy(update={"harness_max_requests": 1})
         runtime = self.runtime(settings)
         requests = []
 
         def respond(request):
+            """返回当前测试场景的模拟 HTTP 响应，不访问真实模型。"""
             requests.append(request)
             return httpx.Response(200, json={"choices": [{"message": {"content": "invalid JSON"}}]})
 
@@ -198,6 +211,7 @@ class HarnessTests(IsolatedAsyncioTestCase):
         self.assertEqual(runtime.snapshot["steps"][0]["status"], "failed")
 
     async def test_step_budget_and_cancellation_are_observable(self):
+        """Verify step budget and cancellation are observable."""
         runtime = self.runtime(self.settings.model_copy(update={"harness_max_steps": 2}))
         with self.assertRaises(TimeoutError):
             async with asyncio.timeout(0.01):
@@ -210,6 +224,7 @@ class HarnessTests(IsolatedAsyncioTestCase):
         self.assertEqual(AgentRunRepository(self.database).list("workspace", 1)[0]["status"], "failed")
 
     async def test_lease_rejects_duplicate_worker_and_recovers_after_deadline(self):
+        """Verify lease rejects duplicate worker and recovers after deadline."""
         runtime = self.runtime()
         with self.assertRaises(WorkspaceConflict):
             self.runtime()
@@ -227,6 +242,7 @@ class HarnessTests(IsolatedAsyncioTestCase):
         self.assertEqual(records[1]["status"], "interrupted")
 
     async def test_history_is_bounded_and_deleted_with_workspace(self):
+        """Verify history is bounded and deleted with workspace."""
         for _ in range(23):
             runtime = self.runtime()
             runtime.finish("failed", "test failure")

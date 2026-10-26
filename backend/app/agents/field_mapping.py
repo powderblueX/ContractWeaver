@@ -9,6 +9,11 @@ from app.model_client import ModelUnavailable
 
 
 def model_fields(fields):
+    """把 Word 内部定位名转换为本批短编号，并唯一标出当前填写位置。
+
+    Args:
+        fields: 本次操作关联的字段集合。
+    """
     mapping = {f"f{index:03d}": field["name"] for index, field in enumerate(fields, 1)}
     payload = [
         {
@@ -38,6 +43,13 @@ def batch_schema(base, item_base, collection_name, mapping):
 
 
 def restore_names(items, mapping, allow_duplicates=False):
+    """严格校验短编号与重复项，再原地恢复内部 Word 定位名。
+
+    Args:
+        items: 需要恢复编号或汇总的结构化条目。
+        mapping: 本批短编号到内部 Word 定位名的映射。
+        allow_duplicates: 是否允许同一字段携带多条复核意见。
+    """
     seen = set()
     for item in items:
         if item.field_name not in mapping or (item.field_name in seen and not allow_duplicates):

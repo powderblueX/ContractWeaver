@@ -12,7 +12,10 @@ from app.services.contract_templates import ContractTemplateCatalog
 
 
 class ProjectLayoutTests(TestCase):
+    """测试夹具或替身：ProjectLayoutTests，用于隔离验证本模块行为。"""
+
     def test_database_name_preserves_existing_data_and_supports_clean_installs(self):
+        """Verify database name preserves existing data and supports clean installs."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             data = root / "data"
@@ -27,6 +30,7 @@ class ProjectLayoutTests(TestCase):
                 self.assertEqual(default_database_path(), current)
 
     def test_catalog_discovers_originals_and_keywords_but_not_legacy_backups(self):
+        """Verify catalog discovers originals and keywords but not legacy backups."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             originals = root / "templates" / "Ministerial"

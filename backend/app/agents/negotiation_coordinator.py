@@ -9,13 +9,29 @@ from app.services.template_retrieval import normalize_title
 
 
 class NegotiationCoordinator:
+    """根据主控观察结果调度分析与检索，最终保留人工选模板关卡。"""
+
     def __init__(self, team, catalog, settings):
+        """注入依赖并初始化本实例的状态，保持资源所有权与其他请求隔离。
+
+        Args:
+            team: 共享连接、角色上下文隔离的 Agent 团队。
+            catalog: 受控的原始模板目录及检索/写入服务。
+            settings: 已解析的运行配置，包含路径、模型及预算；不得公开密钥。
+        """
         self.team = team
         self.catalog = catalog
         self.settings = settings
 
     async def run(self, source_lines, source_text):
+        """按模型决策执行分析与多轮检索，防止重复查询并最终交用户选择。
+
+        Args:
+            source_lines: 带服务器行号的原始纪要，是逐字证据的核验来源。
+            source_text: 尚未被模型改写的原始协商记录。
+        """
         analysis, candidates, fused, searches, history = None, {}, {}, 0, []
+        # fused 累计跨轮检索名次；用户明确点名的模板始终保留优先级。
         questions = []
         warnings = []
         for _ in range(self.settings.supervisor_max_searches + 2):

@@ -37,7 +37,10 @@ SOURCE = "采购方：甲方名称为华明公司。\n供货方：第一次报�
 
 
 class DeterministicAgentTeam:
+    """测试夹具或替身：DeterministicAgentTeam，用于隔离验证本模块行为。"""
+
     def __init__(self, _settings):
+        """初始化当前测试夹具或模拟角色的内部状态。"""
         self.analysis = SimpleNamespace(analyze=self.analyze)
         self.extraction = SimpleNamespace(extract=self.extract)
         self.review = SimpleNamespace(review=self.review_fields)
@@ -45,19 +48,24 @@ class DeterministicAgentTeam:
         self.supervisor = SimpleNamespace(decide=self.decide)
 
     async def decide(self, phase, source_lines, observations, allowed_actions):
+        """Exercise decide within this isolated test scenario."""
         action = "handoff" if "handoff" in allowed_actions else allowed_actions[0]
         return SupervisorDecision(action=action, decision_summary="离线测试：执行必要步骤后交用户审核")
 
     async def review_coverage(self, *_args):
+        """Exercise review coverage within this isolated test scenario."""
         return CoverageResult()
 
     async def __aenter__(self):
+        """Exercise aenter within this isolated test scenario."""
         return self
 
     async def __aexit__(self, *_):
+        """Exercise aexit within this isolated test scenario."""
         pass
 
     async def analyze(self, _lines):
+        """Exercise analyze within this isolated test scenario."""
         return NegotiationAnalysis(
             summary="双方协商设备买卖，最终金额为8000元，乙方名称待补充。",
             contract_type="设备买卖",
@@ -67,6 +75,7 @@ class DeterministicAgentTeam:
         )
 
     async def extract(self, _lines, template_fields):
+        """Exercise extract within this isolated test scenario."""
         candidates = {
             "甲方名称": {
                 "value": "华明公司",
@@ -91,6 +100,7 @@ class DeterministicAgentTeam:
         )
 
     async def review_fields(self, _lines, template_fields, _extracted):
+        """Exercise review fields within this isolated test scenario."""
         return ReviewResult(
             findings=[
                 {
@@ -105,8 +115,11 @@ class DeterministicAgentTeam:
 
 
 class ContractWorkflowTests(TestCase):
+    """测试夹具或替身：ContractWorkflowTests，用于隔离验证本模块行为。"""
+
     def setUp(self):
         # A developer's real .env must never enable paid API calls in tests.
+        """准备隔离测试资源，避免访问生产数据库和真实模型。"""
         configuration_patch = patch.dict(Settings.model_config, {"env_file": None})
         configuration_patch.start()
         self.addCleanup(configuration_patch.stop)
@@ -144,6 +157,7 @@ class ContractWorkflowTests(TestCase):
         self.headers = self.register_and_login("alice")
 
     def tearDown(self):
+        """释放本测试创建的客户端、临时存储及配置替身。"""
         self.client.__exit__(None, None, None)
         self.team_patch.stop()
         self.environment.stop()
@@ -153,6 +167,7 @@ class ContractWorkflowTests(TestCase):
         self.temporary.cleanup()
 
     def register_and_login(self, username):
+        """Exercise register and login within this isolated test scenario."""
         response = self.client.post(
             "/api/v1/auth/register",
             json={"email": f"{username}@example.org", "password": "safe-password-123"},
@@ -164,6 +179,7 @@ class ContractWorkflowTests(TestCase):
         return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     def create_workspace(self):
+        """Exercise create workspace within this isolated test scenario."""
         response = self.client.post(
             "/api/v1/workspaces", headers=self.headers, json={"title": "设备采购", "source_text": SOURCE}
         )
@@ -171,6 +187,7 @@ class ContractWorkflowTests(TestCase):
         return response.json()
 
     def transition(self, workspace, action, payload=None, method="post", expected=200):
+        """Exercise transition within this isolated test scenario."""
         body = {"revision": workspace["revision"], **(payload or {})}
         response = getattr(self.client, method)(
             f"/api/v1/workspaces/{workspace['id']}/{action}", headers=self.headers, json=body
@@ -179,11 +196,13 @@ class ContractWorkflowTests(TestCase):
         return response.json()
 
     def selected_workspace(self):
+        """Exercise selected workspace within this isolated test scenario."""
         workspace = self.create_workspace()
         templates = self.client.get("/api/v1/contracts/templates", headers=self.headers).json()["items"]
         return self.transition(workspace, "template", {"template_id": templates[0]["id"]})
 
     def reviewed_workspace(self):
+        """Exercise reviewed workspace within this isolated test scenario."""
         workspace = self.transition(self.selected_workspace(), "extract")
         decisions = [
             {"name": "甲方名称", "value": "华明公司", "action": "confirm"},
@@ -194,6 +213,7 @@ class ContractWorkflowTests(TestCase):
         return self.transition(workspace, "fields", {"decisions": decisions}, method="patch")
 
     def test_shared_omission_reason_allows_draft_and_later_completion(self):
+        """Verify shared omission reason allows draft and later completion."""
         workspace = self.selected_workspace()
         decisions = [
             {"name": field["name"], "action": "omit", "note": "首轮纪要未提供，暂留空"}
@@ -229,6 +249,7 @@ class ContractWorkflowTests(TestCase):
         self.assertNotIn("新星公司", Document(BytesIO(downloaded.content)).tables[0].cell(0, 0).text)
 
     def test_old_mapping_requires_reselection_without_relabeling_old_fields(self):
+        """Verify old mapping requires reselection without relabeling old fields."""
         workspace = self.selected_workspace()
         with patch("app.documents.template_slots.SLOT_ENGINE_VERSION", "unused"):
             # The catalog owns the imported version used in its fingerprint.
@@ -245,8 +266,13 @@ class ContractWorkflowTests(TestCase):
                 )
 
     def test_coverage_reports_only_verifiable_gaps_and_keeps_extraction_on_failure(self):
+        """Verify coverage reports only verifiable gaps and keeps extraction on failure."""
+
         class GappedTeam(DeterministicAgentTeam):
+            """测试夹具或替身：GappedTeam，用于隔离验证本模块行为。"""
+
             async def review_coverage(self, *_args):
+                """Exercise review coverage within this isolated test scenario."""
                 return CoverageResult(
                     gaps=[
                         {
@@ -268,7 +294,10 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(workspace["coverage_status"], "unverified")
 
         class FailedCoverageTeam(DeterministicAgentTeam):
+            """测试夹具或替身：FailedCoverageTeam，用于隔离验证本模块行为。"""
+
             async def review_coverage(self, *_args):
+                """Exercise review coverage within this isolated test scenario."""
                 raise ModelUnavailable("模拟覆盖服务失败")
 
         with patch("app.services.contract_workflow.create_agent_team", FailedCoverageTeam):
@@ -279,6 +308,7 @@ class ContractWorkflowTests(TestCase):
         )
 
     def test_typed_date_errors_are_flagged_and_cannot_be_confirmed(self):
+        """Verify typed date errors are flagged and cannot be confirmed."""
         document = Document()
         document.add_paragraph("期限自____年____月____日")
         document.save(self.template_folder / "日期分格合同.docx")
@@ -288,7 +318,10 @@ class ContractWorkflowTests(TestCase):
         workspace = self.transition(self.create_workspace(), "template", {"template_id": template["id"]})
 
         class BadDateTeam(DeterministicAgentTeam):
+            """测试夹具或替身：BadDateTeam，用于隔离验证本模块行为。"""
+
             async def extract(self, _lines, template_fields):
+                """Exercise extract within this isolated test scenario."""
                 return ExtractionResult(
                     fields=[
                         {
@@ -322,6 +355,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(loaded["revision"], workspace["revision"])
 
     def test_full_record_to_reviewed_docx_workflow(self):
+        """Verify full record to reviewed docx workflow."""
         workspace = self.transition(self.create_workspace(), "analyze")
         self.assertTrue(workspace["recommendations"])
         recommendation = workspace["recommendations"][0]
@@ -362,6 +396,7 @@ class ContractWorkflowTests(TestCase):
         )
 
     def test_durable_runs_survive_telemetry_reset_and_enforce_ownership(self):
+        """Verify durable runs survive telemetry reset and enforce ownership."""
         workspace = self.transition(self.create_workspace(), "analyze")
         url = f"/api/v1/workspaces/{workspace['id']}"
         runs = self.client.get(url + "/runs", headers=self.headers).json()["items"]
@@ -384,8 +419,13 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(self.client.get(url + "/runs", headers=other).status_code, 404)
 
     def test_failed_analysis_is_durable_without_overwriting_workspace(self):
+        """Verify failed analysis is durable without overwriting workspace."""
+
         class FailingTeam(DeterministicAgentTeam):
+            """测试夹具或替身：FailingTeam，用于隔离验证本模块行为。"""
+
             async def analyze(self, _lines):
+                """Exercise analyze within this isolated test scenario."""
                 raise ModelUnavailable("test model unavailable")
 
         workspace = self.create_workspace()
@@ -402,12 +442,18 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(saved["revision"], workspace["revision"])
 
     def test_supervisor_repair_reaches_docx_only_after_explicit_human_approval(self):
+        """Verify supervisor repair reaches docx only after explicit human approval."""
+
         class RepairTeam(DeterministicAgentTeam):
+            """测试夹具或替身：RepairTeam，用于隔离验证本模块行为。"""
+
             def __init__(self, settings):
+                """初始化当前测试夹具或模拟角色的内部状态。"""
                 super().__init__(settings)
                 self.extraction.repair = self.repair
 
             async def decide(self, phase, source, observations, allowed):
+                """Exercise decide within this isolated test scenario."""
                 if phase == "field_review" and "repair_fields" in allowed:
                     return SupervisorDecision(
                         action="repair_fields",
@@ -417,6 +463,7 @@ class ContractWorkflowTests(TestCase):
                 return await super().decide(phase, source, observations, allowed)
 
             async def repair(self, source, specs, previous):
+                """Exercise repair within this isolated test scenario."""
                 return ExtractionResult(
                     fields=[
                         {
@@ -429,6 +476,7 @@ class ContractWorkflowTests(TestCase):
                 )
 
             async def review_fields(self, lines, specs, fields):
+                """Exercise review fields within this isolated test scenario."""
                 if any(field["name"] == "金额" and field["value"] == "8000元" for field in fields):
                     return ReviewResult()
                 return await super().review_fields(lines, specs, fields)
@@ -453,6 +501,7 @@ class ContractWorkflowTests(TestCase):
         self.assertIn("金额：8000元", output.paragraphs[0].text)
 
     def test_literal_requested_title_survives_generic_model_search_query(self):
+        """Verify literal requested title survives generic model search query."""
         response = self.client.post(
             "/api/v1/workspaces",
             headers=self.headers,
@@ -464,6 +513,7 @@ class ContractWorkflowTests(TestCase):
         self.assertTrue(analyzed["recommendations"][0]["explicitly_requested"])
 
     def test_email_only_authentication_and_activity_ownership(self):
+        """Verify email only authentication and activity ownership."""
         workspace = self.transition(self.create_workspace(), "analyze")
         self.assertIn("last_run", workspace)
         activity = self.client.get(f"/api/v1/workspaces/{workspace['id']}/activity", headers=self.headers)
@@ -484,6 +534,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(duplicate.status_code, 409)
 
     def test_preview_reports_pending_work_and_structured_table_blocks(self):
+        """Verify preview reports pending work and structured table blocks."""
         workspace = self.selected_workspace()
         preview = self.client.get(
             f"/api/v1/workspaces/{workspace['id']}/preview", headers=self.headers
@@ -494,10 +545,14 @@ class ContractWorkflowTests(TestCase):
         self.assertTrue(all(field["display_name"] for field in refreshed["fields"]))
 
     def test_activity_can_be_polled_while_analysis_request_is_still_pending(self):
+        """Verify activity can be polled while analysis request is still pending."""
         started, release = Event(), Event()
 
         class DelayedTeam(DeterministicAgentTeam):
+            """测试夹具或替身：DelayedTeam，用于隔离验证本模块行为。"""
+
             async def analyze(self, lines):
+                """Exercise analyze within this isolated test scenario."""
                 started.set()
                 while not release.is_set():
                     await asyncio.sleep(0.01)
@@ -520,9 +575,11 @@ class ContractWorkflowTests(TestCase):
             self.assertEqual(result.result(timeout=5)["last_run"]["status"], "completed")
 
     def test_completion_is_not_published_before_database_commit(self):
+        """Verify completion is not published before database commit."""
         workspace = self.create_workspace()
 
         def reject_commit(*_args, **_kwargs):
+            """Exercise reject commit within this isolated test scenario."""
             self.assertEqual(operations.snapshot(workspace["id"])["status"], "running")
             raise WorkspaceConflict("模拟版本冲突")
 
@@ -536,6 +593,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(activity["status"], "failed")
 
     def test_manual_template_choice_is_durable_and_never_overridden(self):
+        """Verify manual template choice is durable and never overridden."""
         workspace = self.transition(self.create_workspace(), "analyze")
         items = self.client.get("/api/v1/contracts/templates?limit=1&offset=1", headers=self.headers).json()
         self.assertEqual(items["total"], 2)
@@ -546,6 +604,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(restored["selected_template"]["id"], selected_id)
 
     def test_stale_revisions_and_user_ownership(self):
+        """Verify stale revisions and user ownership."""
         workspace = self.selected_workspace()
         old_revision = workspace["revision"]
         updated = self.transition(workspace, "extract")
@@ -571,6 +630,7 @@ class ContractWorkflowTests(TestCase):
         )
 
     def test_user_edits_require_explicit_reextraction_and_unknown_fields_are_rejected(self):
+        """Verify user edits require explicit reextraction and unknown fields are rejected."""
         workspace = self.reviewed_workspace()
         self.transition(workspace, "extract", expected=409)
         self.transition(
@@ -585,6 +645,7 @@ class ContractWorkflowTests(TestCase):
         self.assertFalse(any(field["status"] == "confirmed" for field in reset["fields"]))
 
     def test_omitting_a_field_requires_a_reason(self):
+        """Verify omitting a field requires a reason."""
         workspace = self.transition(self.selected_workspace(), "extract")
         self.transition(
             workspace,
@@ -595,6 +656,7 @@ class ContractWorkflowTests(TestCase):
         )
 
     def test_failed_batches_can_retry_without_overwriting_confirmed_fields(self):
+        """Verify failed batches can retry without overwriting confirmed fields."""
         document = Document()
         document.add_paragraph(" ".join("{字段" + str(index) + "}" for index in range(10)))
         document.save(self.template_folder / "分批测试合同.docx")
@@ -606,9 +668,12 @@ class ContractWorkflowTests(TestCase):
         workspace = self.transition(self.create_workspace(), "template", {"template_id": template_id})
 
         class PartialFailureTeam(DeterministicAgentTeam):
+            """测试夹具或替身：PartialFailureTeam，用于隔离验证本模块行为。"""
+
             attempted_batches = []
 
             async def extract(self, lines, fields):
+                """Exercise extract within this isolated test scenario."""
                 names = [field["name"] for field in fields]
                 self.attempted_batches.append(names)
                 if "字段5" in names and len(self.attempted_batches) <= 2:
@@ -633,6 +698,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual((confirmed["status"], confirmed["value"]), ("confirmed", "人工值"))
 
     def test_manual_review_and_generation_work_without_model_configuration(self):
+        """Verify manual review and generation work without model configuration."""
         workspace = self.selected_workspace()
         self.assertEqual(len(workspace["fields"]), 4)
         decisions = [
@@ -643,8 +709,13 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(len(generated["artifacts"]), 1)
 
     def test_forged_evidence_remains_unverified(self):
+        """Verify forged evidence remains unverified."""
+
         class ForgedEvidenceTeam(DeterministicAgentTeam):
+            """测试夹具或替身：ForgedEvidenceTeam，用于隔离验证本模块行为。"""
+
             async def extract(self, _lines, template_fields):
+                """Exercise extract within this isolated test scenario."""
                 return ExtractionResult(
                     fields=[
                         {
@@ -664,6 +735,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(field["evidence"], [])
 
     def test_template_file_change_invalidates_selected_version(self):
+        """Verify template file change invalidates selected version."""
         workspace = self.selected_workspace()
         path = get_template_catalog().get_template(workspace["selected_template"]["id"]).path
         document = Document(path)
@@ -672,6 +744,7 @@ class ContractWorkflowTests(TestCase):
         self.transition(workspace, "extract", expected=409)
 
     def test_engine_upgrade_invalidates_old_field_locations(self):
+        """Verify engine upgrade invalidates old field locations."""
         workspace = self.selected_workspace()
         with patch("app.services.contract_templates.SLOT_ENGINE_VERSION", "next-engine"):
             self.transition(workspace, "extract", expected=409)
@@ -679,6 +752,7 @@ class ContractWorkflowTests(TestCase):
             self.assertEqual(response.status_code, 409)
 
     def test_original_template_manual_api_workflow(self):
+        """Verify original template manual api workflow."""
         for path in self.template_folder.glob("*.docx"):
             document = Document()
             document.add_paragraph("采购人____")
@@ -701,6 +775,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(output.tables[0].cell(1, 0).text, "设备A")
 
     def test_visual_content_requires_separate_user_approval_before_export(self):
+        """Verify visual content requires separate user approval before export."""
         for path in self.template_folder.glob("*.docx"):
             document = Document()
             document.add_paragraph("采购人____").add_run()._r.append(
@@ -731,6 +806,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(len(output.element.xpath(".//w:pict")), 1)
 
     def test_model_failure_keeps_imported_record(self):
+        """Verify model failure keeps imported record."""
         workspace = self.create_workspace()
         with patch("app.services.contract_workflow.create_agent_team", real_agent_team):
             self.transition(workspace, "analyze", expected=503)
@@ -739,6 +815,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(restored["revision"], workspace["revision"])
 
     def test_import_and_template_download(self):
+        """Verify import and template download."""
         uploaded = self.client.post(
             "/api/v1/sources/parse",
             headers=self.headers,
@@ -776,6 +853,7 @@ class ContractWorkflowTests(TestCase):
         )
 
     def test_delete_removes_owned_files_and_revokes_access(self):
+        """Verify delete removes owned files and revokes access."""
         workspace = self.transition(self.reviewed_workspace(), "generate", {"preview_acknowledged": True})
         artifact = workspace["artifacts"][0]
         self.assertTrue((self.root / "generated" / artifact["filename"]).exists())
@@ -796,6 +874,7 @@ class ContractWorkflowTests(TestCase):
         )
 
     def test_catalog_uses_actual_docx_placeholders_and_preserves_split_runs(self):
+        """Verify catalog uses actual docx placeholders and preserves split runs."""
         placeholder_folder = self.template_folder / "占位符"
         placeholder_folder.mkdir()
         (placeholder_folder / "设备买卖合同.json").write_text(
@@ -811,6 +890,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(result.paragraphs[0].text, "甲方：华明公司，金额：8000元")
 
     def test_auth_logout_and_safe_health_metadata(self):
+        """Verify auth logout and safe health metadata."""
         health = self.client.get("/api/v1/health").json()
         self.assertFalse(health["model_configured"])
         self.assertIn("LAW_LLM_BASE_URL", health["missing_model_settings"])
@@ -818,6 +898,7 @@ class ContractWorkflowTests(TestCase):
         self.assertEqual(self.client.get("/api/v1/workspaces", headers=self.headers).status_code, 401)
 
     def test_generated_snapshot_does_not_change_when_reviewed_values_change(self):
+        """Verify generated snapshot does not change when reviewed values change."""
         reviewed = self.reviewed_workspace()
         generated = self.transition(reviewed, "generate", {"preview_acknowledged": True})
         artifact = generated["artifacts"][0]
@@ -834,6 +915,7 @@ class ContractWorkflowTests(TestCase):
         self.assertIn("8500元", preview["text"])
 
     def test_source_character_limit_is_enforced_without_model_calls(self):
+        """Verify source character limit is enforced without model calls."""
         response = self.client.post(
             "/api/v1/workspaces",
             headers=self.headers,

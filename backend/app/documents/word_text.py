@@ -14,6 +14,8 @@ SKIP_TAGS = {qn(name) for name in ("w:p", "w:pPr", "w:rPr", "w:drawing", "w:pict
 
 @dataclass(frozen=True)
 class TextAtom:
+    """保留可见文字及其原 XML 叶节点的位置单元。"""
+
     element: object
     value: str
 
@@ -23,6 +25,11 @@ def paragraph_atoms(paragraph) -> list[TextAtom]:
     atoms = []
 
     def visit(parent):
+        """递归读取文字叶节点，跳过会重复遍历的段落和视觉对象。
+
+        Args:
+            parent: 当前 XML 遍历的父节点。
+        """
         for element in parent:
             if element.tag in SKIP_TAGS:
                 continue
@@ -41,6 +48,11 @@ def paragraph_atoms(paragraph) -> list[TextAtom]:
 
 
 def paragraph_text(paragraph) -> str:
+    """按可见 XML 文字原子拼接段落，保留正文中的实际制表和换行。
+
+    Args:
+        paragraph: 保留原 XML 定位的 Word 段落。
+    """
     return "".join(atom.value for atom in paragraph_atoms(paragraph))
 
 

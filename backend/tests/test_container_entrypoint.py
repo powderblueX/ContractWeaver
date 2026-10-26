@@ -11,7 +11,10 @@ from app.container_entrypoint import main
 
 
 class ContainerEntrypointTests(TestCase):
+    """测试夹具或替身：ContainerEntrypointTests，用于隔离验证本模块行为。"""
+
     def test_private_secret_copy_and_privilege_drop_before_exec(self):
+        """Verify private secret copy and privilege drop before exec."""
         with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
             root = Path(temporary)
             source = root / "source.env"
@@ -39,6 +42,7 @@ class ContainerEntrypointTests(TestCase):
             self.assertEqual(calls[4][1], ("python", ["python", "-m", "uvicorn"]))
 
     def test_missing_secret_stops_before_server_start(self):
+        """Verify missing secret stops before server start."""
         with (
             patch.dict(os.environ, {"LAW_ENV_FILE": "/missing-contractweaver-secret"}),
             patch("sys.argv", ["entrypoint", "python"]),

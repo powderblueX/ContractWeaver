@@ -21,7 +21,10 @@ from app.services.contract_templates import ContractTemplateCatalog
 
 
 class OriginalTemplateTests(TestCase):
+    """测试夹具或替身：OriginalTemplateTests，用于隔离验证本模块行为。"""
+
     def setUp(self):
+        """准备隔离测试资源，避免访问生产数据库和真实模型。"""
         self.temporary = TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -31,12 +34,14 @@ class OriginalTemplateTests(TestCase):
         self.catalog = ContractTemplateCatalog(self.root, self.root / "generated")
 
     def describe(self, document):
+        """Exercise describe within this isolated test scenario."""
         document.save(self.path)
         self.catalog.refresh()
         identifier = self.catalog.list_templates()[0]["id"]
         return identifier, self.catalog.describe_template(identifier)
 
     def test_original_without_markers_extracts_table_and_split_run_blanks(self):
+        """Verify original without markers extracts table and split run blanks."""
         document = Document()
         paragraph = document.add_paragraph("采购人：")
         paragraph.add_run("__").bold = True
@@ -59,6 +64,7 @@ class OriginalTemplateTests(TestCase):
         self.assertTrue(output.paragraphs[0].runs[1].bold)
 
     def test_adjacent_labels_and_repeated_amounts_are_separate(self):
+        """Verify adjacent labels and repeated amounts are separate."""
         document = Document()
         document.add_paragraph("出卖人：签订地点：")
         document.add_paragraph("金额____，金额____")
@@ -67,6 +73,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(len(set(details["placeholders"])), 4)
 
     def test_omitted_generated_slots_restore_original_blanks(self):
+        """Verify omitted generated slots restore original blanks."""
         document = Document()
         document.add_paragraph("甲方____，说明：")
         document.add_table(rows=1, cols=1)
@@ -82,6 +89,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(artifact["missing_fields"], sorted(omitted))
 
     def test_underlined_whitespace_and_internal_spaces_are_detected(self):
+        """Verify underlined whitespace and internal spaces are detected."""
         document = Document()
         paragraph = document.add_paragraph("日期")
         paragraph.add_run("   ").underline = True
@@ -91,6 +99,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(len(details["fields"]), 3)
 
     def test_underlined_blank_lines_are_not_merged_across_a_real_line_break(self):
+        """Verify underlined blank lines are not merged across a real line break."""
         document = Document()
         paragraph = document.add_paragraph("具体事宜：")
         run = paragraph.add_run("        ")
@@ -106,6 +115,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(output.paragraphs[0].text, "具体事宜：第一行\n第二行。")
 
     def test_unsupported_control_is_not_silently_filled(self):
+        """Verify unsupported control is not silently filled."""
         document = Document()
         document.add_paragraph("甲方____")
         document.element.body.append(OxmlElement("w:sdt"))
@@ -116,6 +126,7 @@ class OriginalTemplateTests(TestCase):
             self.catalog.generate_contract(identifier, {details["placeholders"][0]: "甲公司"})
 
     def test_compilation_is_deterministic_and_explicit_markers_stay_supported(self):
+        """Verify compilation is deterministic and explicit markers stay supported."""
         document = Document()
         document.add_paragraph("甲方：{甲方名称}，金额____")
         identifier, details = self.describe(document)
@@ -128,6 +139,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(second.generated_slots, 0)
 
     def test_static_vml_separator_lines_are_preserved(self):
+        """Verify static vml separator lines are preserved."""
         document = Document()
         paragraph = document.add_paragraph("甲方____")
         paragraph.add_run()._r.append(
@@ -144,6 +156,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(output.paragraphs[0].text, "甲方甲公司")
 
     def test_header_controls_are_blocked_too(self):
+        """Verify header controls are blocked too."""
         document = Document()
         document.add_paragraph("甲方____")
         document.sections[0].header._element.append(OxmlElement("w:sdt"))
@@ -151,6 +164,7 @@ class OriginalTemplateTests(TestCase):
         self.assertFalse(details["fillable"])
 
     def test_first_and_even_page_headers_are_detected_without_creating_new_parts(self):
+        """Verify first and even page headers are detected without creating new parts."""
         document = Document()
         document.add_paragraph("正文____")
         section = document.sections[0]
@@ -165,6 +179,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(output.sections[0].even_page_footer.paragraphs[0].text, "偶数页确认")
 
     def test_separator_notes_are_not_mistaken_for_business_notes(self):
+        """Verify separator notes are not mistaken for business notes."""
         document = Document()
         document.add_paragraph("正文____")
         xml = '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="-1" w:type="separator"/></w:footnotes>'
@@ -183,6 +198,7 @@ class OriginalTemplateTests(TestCase):
         self.assertIn("脚注或尾注", details["unsupported_structures"])
 
     def test_merged_cell_continuations_are_not_invisible_input_slots(self):
+        """Verify merged cell continuations are not invisible input slots."""
         document = Document()
         table = document.add_table(rows=2, cols=1)
         table.cell(0, 0).merge(table.cell(1, 0))
@@ -191,6 +207,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(len(details["fields"]), 1)
 
     def test_legacy_form_fields_are_blocked(self):
+        """Verify legacy form fields are blocked."""
         document = Document()
         paragraph = document.add_paragraph("甲方____")
         field = OxmlElement("w:fldSimple")
@@ -201,6 +218,7 @@ class OriginalTemplateTests(TestCase):
         self.assertIn("邮件合并或交互式填写域", details["unsupported_structures"])
 
     def test_mixed_graphic_runs_are_filled_without_removing_graphics(self):
+        """Verify mixed graphic runs are filled without removing graphics."""
         document = Document()
         paragraph = document.add_paragraph()
         run = paragraph.add_run("甲方____")
@@ -218,6 +236,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(output.paragraphs[0].text, "甲方甲公司")
 
     def test_images_are_preserved_and_require_explicit_visual_review(self):
+        """Verify images are preserved and require explicit visual review."""
         image = b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
         )
@@ -235,6 +254,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(output.paragraphs[0].text, "甲方甲公司")
 
     def test_word_text_box_content_is_editable_without_changing_its_frame(self):
+        """Verify word text box content is editable without changing its frame."""
         document = Document()
         paragraph = document.add_paragraph("买方____")
         paragraph.add_run()._r.append(
@@ -257,6 +277,7 @@ class OriginalTemplateTests(TestCase):
         self.assertIn("卖方公司1", text)
 
     def test_empty_text_box_is_one_reviewable_candidate(self):
+        """Verify empty text box is one reviewable candidate."""
         document = Document()
         document.add_paragraph().add_run()._r.append(
             parse_xml(
@@ -270,6 +291,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(len(details["fields"]), 1)
 
     def test_hyperlink_text_can_be_filled_without_losing_its_relationship(self):
+        """Verify hyperlink text can be filled without losing its relationship."""
         document = Document()
         paragraph = document.add_paragraph()
         identifier = document.part.relate_to(
@@ -289,6 +311,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(output.part.rels[identifier].target_ref, "https://example.com")
 
     def test_multiple_compatibility_text_box_branches_remain_blocked(self):
+        """Verify multiple compatibility text box branches remain blocked."""
         document = Document()
         box = "<w:pict><v:shape><v:textbox><w:txbxContent><w:p><w:r><w:t>甲方____</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict>"
         document.add_paragraph().add_run()._r.append(
@@ -307,6 +330,7 @@ class OriginalTemplateTests(TestCase):
         self.assertTrue(any("兼容分支" in reason for reason in details["unsupported_structures"]))
 
     def test_equal_compatibility_branches_share_one_field_and_are_both_filled(self):
+        """Verify equal compatibility branches share one field and are both filled."""
         document = Document()
         box = '<w:pict><v:shape id="same-box"><v:textbox><w:txbxContent><w:p><w:r><w:t>甲方____</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict>'
         document.add_paragraph().add_run()._r.append(
@@ -333,6 +357,7 @@ class OriginalTemplateTests(TestCase):
         self.assertEqual(visual_fingerprint(output), before)
 
     def test_colon_before_layout_breaks_does_not_delete_the_breaks(self):
+        """Verify colon before layout breaks does not delete the breaks."""
         document = Document()
         document.add_paragraph("甲方：\n签字")
         document.add_paragraph("乙方：\t签字")
