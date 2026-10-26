@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Start the API using project-local Python dependencies.
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root/backend"

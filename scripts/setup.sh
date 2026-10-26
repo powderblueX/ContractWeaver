@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Initialize local dependencies and only absent configuration.
 # Linux/macOS initialization; no system package installation or secret overwrite.
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"

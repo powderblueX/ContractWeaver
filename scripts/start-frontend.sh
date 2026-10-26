@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Start the frontend using its local dependency tree.
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root/frontend"

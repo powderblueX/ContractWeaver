@@ -15,6 +15,8 @@ $pythonExecutable = $pythonCommand.Source
 
 Push-Location (Join-Path $projectRoot 'backend')
 try {
+    & $pythonExecutable -m app.cli.check_comments
+    if ($LASTEXITCODE -ne 0) { throw 'Backend comment coverage failed.' }
     & $pythonExecutable -m ruff check app tests
     if ($LASTEXITCODE -ne 0) { throw 'Backend lint failed.' }
     & $pythonExecutable -m unittest discover -s tests -v

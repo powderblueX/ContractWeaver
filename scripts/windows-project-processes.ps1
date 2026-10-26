@@ -1,4 +1,14 @@
+<#
+.SYNOPSIS
+Identify project process trees and validate cleanup paths; never match by port alone.
+#>
 # Windows-only process discovery. Never match by port alone or kill every node/python.
+<#
+.SYNOPSIS
+Find strong project process identities and their descendants, excluding this checker.
+.PARAMETER ProjectRoot
+Resolved project root used to verify executable and launcher command paths.
+#>
 function Get-ContractWeaverProcessSnapshot {
     param([Parameter(Mandatory = $true)][string]$ProjectRoot)
     $processes = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
@@ -37,6 +47,14 @@ function Get-ContractWeaverProcessSnapshot {
     return @($processes | Where-Object { $owned.Contains([int]$_.ProcessId) })
 }
 
+<#
+.SYNOPSIS
+Remove a known generated directory only after containment and link checks.
+.PARAMETER ProjectRoot
+Resolved project root that cleanup must remain below.
+.PARAMETER RelativePath
+Explicit generated directory path relative to the root; never use a broad user-data target.
+#>
 function Remove-ContractWeaverGeneratedDirectory {
     param([Parameter(Mandatory = $true)][string]$ProjectRoot, [Parameter(Mandatory = $true)][string]$RelativePath)
     $target = [IO.Path]::GetFullPath((Join-Path $ProjectRoot $RelativePath))

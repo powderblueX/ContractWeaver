@@ -1,3 +1,7 @@
+<#
+.SYNOPSIS
+Initialize backend/frontend dependencies without overwriting an existing .env.
+#>
 param([ValidateSet('all', 'backend', 'frontend')][string]$Component = 'all')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot

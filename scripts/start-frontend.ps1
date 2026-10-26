@@ -1,3 +1,7 @@
+<#
+.SYNOPSIS
+Start Vite from the project frontend dependency tree.
+#>
 param([string]$BindAddress = '127.0.0.1', [ValidateRange(1, 65535)][int]$Port = 5173)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot

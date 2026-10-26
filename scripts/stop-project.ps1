@@ -1,3 +1,7 @@
+<#
+.SYNOPSIS
+Stop only identified project processes and safely clean generated directories.
+#>
 param([switch]$RemoveEnvironment)
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Use this script on Windows only.' }
