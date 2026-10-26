@@ -102,12 +102,11 @@ Historical engineering records and screenshots live in the ignored `local-notes/
 
 ## Documentation and examples
 
-Recommended order: this README → [English guide](docs/guide.en.md) (or [中文完整指南](docs/guide.zh-CN.md)) → [Agent/Harness source-reading guide (Chinese)](docs/code-reading-guide.zh-CN.md).
+Recommended order: this README → [English guide](docs/guide.en.md) (or [中文完整指南](docs/guide.zh-CN.md))
 
 The full guide covers operation, architecture, configuration, deployment, troubleshooting, and tests. The source-reading guide focuses on backend agent coordination and runtime implementation.
 
 - [Custody-contract meeting minutes](examples/meeting-minutes-custody.md)
-- [Equipment-purchase meeting minutes](examples/meeting-minutes-equipment-purchase.md)
 
 ## Operational scope
 

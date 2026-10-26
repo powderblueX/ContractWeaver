@@ -105,13 +105,11 @@ ContractWeaver/
 推荐阅读顺序：
 
 1. 本 README：了解项目与快速启动。
-2. [中文完整指南](docs/guide.zh-CN.md)：使用流程、架构图、配置、部署、排障与测试。
-3. [Agent/Harness 源码阅读顺序](docs/code-reading-guide.zh-CN.md)：专注后端 Agent 与运行框架的实现。
+2. [中文完整指南](docs/guide.zh-CN.md)：使用流程、架构图、配置、部署、排障与测试
 
 [English guide](docs/guide.en.md) 是完整指南的英文版本，可按语言偏好选择。实际体验时使用以下示例：
 
 - [保管合同会议纪要](examples/meeting-minutes-custody.md)
-- [工业品买卖会议纪要](examples/meeting-minutes-equipment-purchase.md)
 
 ## 使用边界
 
