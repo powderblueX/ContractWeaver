@@ -316,7 +316,7 @@ The default database is `backend/data/contractweaver.db`. An existing `lawreason
 | Empty template library | `LAW_RESOURCES_DIR` and custom absolute paths |
 | Missing test dependencies | Install `backend/requirements-dev.txt`; run `npm ci` for the frontend |
 
-The health endpoint reports `model_configured=true` when required settings are present. Verify live connectivity with the manually invoked, billable probe in section 13.
+The health endpoint reports `model_configured=true` when required settings are present. Verify live connectivity with the manually invoked, billable probe in section 12.
 
 ## 11. API overview
 
@@ -339,11 +339,7 @@ Business routes use the `/api/v1` prefix.
 
 After local startup, the full OpenAPI page is available at `http://127.0.0.1:8000/docs`.
 
-## 12. Agent and Harness implementation reading order
-
-Follow the [Agent/Harness source-reading guide (Chinese)](code-reading-guide.zh-CN.md). It covers role assembly, structured model requests, supervisor decisions, bounded coordination loops, runtime budgets, context propagation, execution leases, and run history. Application UI, contract rules, and Word processing are outside that reading route.
-
-## 13. Checks and tests
+## 12. Checks and tests
 
 Backend (install `backend/requirements-dev.txt` first):
 
@@ -382,7 +378,7 @@ cd backend
 python -m app.cli.check_llm
 ```
 
-## 14. Examples and acceptance checks
+## 13. Examples and acceptance checks
 
 `examples/meeting-minutes-custody.md` contains a fictional custody-contract meeting with an explicit template name, a final fee, a withdrawn offer, missing facts, and unresolved clauses. It is useful for checking:
 
@@ -394,7 +390,7 @@ python -m app.cli.check_llm
 
 `examples/meeting-minutes-equipment-purchase.md` demonstrates industrial-goods template retrieval and field extraction.
 
-## 15. Known limits
+## 14. Known limits
 
 - Template scanning depends on Word structure and may miss visual blanks, complex drawings, appendices, or layout semantics.
 - The text preview groups paragraphs and tables; the downloaded Word file remains the final layout reference.

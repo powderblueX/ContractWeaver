@@ -316,7 +316,7 @@ Windows 的 `stop-project.bat` 停止本项目服务及关联子进程并清理�
 | 模板库为空 | 检查 `LAW_RESOURCES_DIR` 和目录改名后的绝对路径 |
 | 测试缺少模块 | 安装 `backend/requirements-dev.txt`；前端执行 `npm ci` |
 
-健康接口的 `model_configured=true` 表示必填配置齐全。真实连通性需手工运行第 13 节探针；探针会产生模型请求费用。
+健康接口的 `model_configured=true` 表示必填配置齐全。真实连通性需手工运行第 12 节探针；探针会产生模型请求费用。
 
 ## 11. API 概览
 
@@ -339,9 +339,7 @@ Windows 的 `stop-project.bat` 停止本项目服务及关联子进程并清理�
 
 本地启动后，可在 `http://127.0.0.1:8000/docs` 查看完整 OpenAPI 页面。
 
-## 12. Agent 与 Harness 源码阅读
-
-按 [专项源码阅读指南](code-reading-guide.zh-CN.md) 阅读：角色组装 → 输出协议 → Prompt 与模型适配器 → 目标映射 → 主控决策 → 两条协调循环 → Harness 执行边界 → 运行生命周期 → 租约与持久日志。每一步都对应文件、函数、关键状态和测试入口。
+## 12. 检查与测试
 
 ### 注释层级
 
@@ -354,7 +352,7 @@ Windows 的 `stop-project.bat` 停止本项目服务及关联子进程并清理�
 
 项目使用 `python -m app.cli.check_comments` 和前端测试脚本检查注释是否缺失。自动检查只负责覆盖率，注释内容仍以清晰、准确和便于维护为准。
 
-## 13. 检查与测试
+### 测试命令
 
 `backend/tests/`、前端各 `__tests__/` 目录及 `frontend/vitest.config.js` 都是项目源码的一部分，应提交到 GitHub。它们用于复现功能边界、验证重构没有破坏行为，也能让贡献者运行同一套检查。测试生成的缓存、覆盖率报告、虚拟环境、`node_modules` 和构建产物不提交。
 
@@ -395,7 +393,7 @@ cd backend
 python -m app.cli.check_llm
 ```
 
-## 14. 示例与验收
+## 13. 示例与验收
 
 `examples/meeting-minutes-custody.md` 提供保管合同会议纪要，包含明确合同名称、最终费用、被撤回报价、缺失信息和未决条款。它适合检查以下行为：
 
@@ -407,7 +405,7 @@ python -m app.cli.check_llm
 
 `examples/meeting-minutes-equipment-purchase.md` 用于工业品买卖模板检索和字段提取演示。
 
-## 15. 已知边界
+## 14. 已知边界
 
 - 模板扫描依赖 Word 结构，无法覆盖所有视觉空白、复杂绘图、附件和排版语义；
 - 文字预览按段落和表格展示，最终版面以下载后的 Word 文件为准；
