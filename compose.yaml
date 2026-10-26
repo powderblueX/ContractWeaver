@@ -1,3 +1,4 @@
+# Local deployment topology: private API configuration, separate user-data volume, public frontend.
 name: contractweaver
 services:
   backend:
