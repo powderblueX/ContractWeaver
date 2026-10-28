@@ -47,6 +47,40 @@ class ModelSettingsTests(TestCase):
 class ChatModelTests(IsolatedAsyncioTestCase):
     """测试夹具或替身：ChatModelTests，用于隔离验证本模块行为。"""
 
+    async def test_safe_error_categories_distinguish_transport_provider_and_response(self):
+        """连接、服务和返回格式失败具有不同公开分类且不泄露上游正文。"""
+        settings = Settings(
+            _env_file=None,
+            llm_base_url="https://model.example.org",
+            llm_api_key="secret-test",
+            llm_model="test",
+        )
+        cases = [
+            (httpx.ConnectError("private proxy error"), "model_network"),
+            (httpx.ReadTimeout("private timeout"), "model_timeout"),
+            (httpx.Response(401, text="secret-test"), "model_auth"),
+            (httpx.Response(429, text="private quota detail"), "model_rate_limit"),
+            (httpx.Response(500, text="private upstream trace"), "model_provider"),
+            (httpx.Response(200, json=[]), "model_response"),
+        ]
+        for response, expected in cases:
+            with self.subTest(code=expected):
+
+                def respond(_):
+                    """返回指定错误或模拟响应。"""
+                    if isinstance(response, Exception):
+                        raise response
+                    return response
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                    with self.assertRaises(ModelUnavailable) as raised:
+                        await ChatModel(settings, client).complete([])
+                public = raised.exception.public_error()
+                self.assertEqual(public["code"], expected)
+                self.assertTrue(public["hint"])
+                self.assertNotIn("secret-test", json.dumps(public))
+                self.assertNotIn("private", json.dumps(public))
+
     async def test_missing_key_does_not_send_request(self):
         """Verify missing key does not send request."""
         settings = Settings(_env_file=None, llm_api_key=SecretStr(""))
@@ -147,8 +181,9 @@ class ChatModelTests(IsolatedAsyncioTestCase):
             llm_model="deepseek-flash",
         )
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-            with self.assertRaisesRegex(ModelUnavailable, "LAW_LLM_MAX_TOKENS"):
+            with self.assertRaisesRegex(ModelUnavailable, "长度上限") as raised:
                 await ChatModel(settings, client).generate_structured("输出 JSON", {}, NegotiationAnalysis)
+        self.assertEqual(raised.exception.code, "output_truncated")
         self.assertEqual(len(calls), 1)
 
     async def test_upstream_auth_error_never_exposes_key(self):

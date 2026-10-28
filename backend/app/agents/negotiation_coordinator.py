@@ -77,16 +77,23 @@ class NegotiationCoordinator:
                 if query in history:
                     warnings.append("主控重复相同检索词，已停止循环并保留候选；可手动选择模板")
                     break
-                found = await run_step(
-                    "retrieve_templates",
-                    lambda: asyncio.to_thread(
-                        self.catalog.search_templates,
-                        query,
-                        limit=self.settings.recommendation_limit,
-                        explicit_names=requested,
-                        source_text=source_text,
-                    ),
-                )
+                try:
+                    found = await run_step(
+                        "retrieve_templates",
+                        lambda: asyncio.to_thread(
+                            self.catalog.search_templates,
+                            query,
+                            limit=self.settings.recommendation_limit,
+                            explicit_names=requested,
+                            source_text=source_text,
+                        ),
+                    )
+                except Exception:
+                    # 保留已完成的分析与前轮候选，交由用户手动浏览模板库。
+                    warnings.append(
+                        "自动模板检索暂时不可用，记录分析已保留。请在模板库中搜索并选择；持续失败请联系服务维护者。"
+                    )
+                    break
                 searches += 1
                 history.append(query)
                 for rank, item in enumerate(found, 1):

@@ -213,6 +213,10 @@ The progress panel reports:
 - supervisor actions and target counts;
 - failure, partial-result, and fallback messages.
 
+### Failure recovery
+
+Recovery notices explain connection, provider, configuration, and output-validation failures and offer appropriate actions. Failed recommendations lead to manual template selection; library failures provide a reload button. Retrying first checks server state to avoid repeating work that is still running or already committed. Progress counts successful and failed batches separately. When every extraction batch fails, the coverage-model request is skipped. An all-blank review explains that at least one value must be entered and confirmed before export; users can download the blank original from the template library.
+
 ## 9. Configuration
 
 Backend secrets belong in `backend/.env`. Create it from the example:

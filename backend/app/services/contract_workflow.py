@@ -228,6 +228,7 @@ class ContractWorkflowService:
         workspace.extraction_failures = []
         workspace.coverage_gaps = []
         workspace.coverage_status = "not_run"
+        workspace.coverage_error = {}
         workspace.agent_questions = []
         workspace.coordination_warnings = []
         workspace.stage = "template_selected"
@@ -339,7 +340,11 @@ class ContractWorkflowService:
                 if not isinstance(result, (ModelUnavailable, ValueError)):
                     raise result
                 workspace.extraction_failures.append(
-                    {"field_names": [field["name"] for field in batch], "message": str(result)}
+                    {
+                        "field_names": [field["name"] for field in batch],
+                        "message": str(result),
+                        "error": result.public_error() if isinstance(result, ModelUnavailable) else {},
+                    }
                 )
             else:
                 by_name.update({field.name: field for field in result.fields})
@@ -357,7 +362,15 @@ class ContractWorkflowService:
         workspace.fields = [by_name[field["name"]] for field in details["fields"]]
         operations.update(message="正在对照完整纪要检查跨字段遗漏与模板文义")
         workspace.coverage_gaps = []
+        workspace.coverage_error = {}
         try:
+            if len(workspace.extraction_failures) == len(batches):
+                raise ModelUnavailable(
+                    "本次所有字段批次均未完成，已跳过全合同覆盖检查",
+                    code="coverage_skipped",
+                    hint="请先重试失败批次，或手动补充字段并对照完整纪要核查。",
+                    retryable=False,
+                )
             async with create_agent_team(self.settings) as team:
                 coverage = await run_step(
                     "review_coverage",
@@ -377,7 +390,16 @@ class ContractWorkflowService:
                 f"全合同覆盖检查发现 {len(valid_gaps)} 个待人工核对事项；不代表内容完整性认证",
             )
         except (ModelUnavailable, ValueError) as error:
-            workspace.coverage_status = "failed"
+            workspace.coverage_status = (
+                "skipped"
+                if isinstance(error, ModelUnavailable) and error.code == "coverage_skipped"
+                else "failed"
+            )
+            workspace.coverage_error = (
+                error.public_error()
+                if isinstance(error, ModelUnavailable)
+                else {"message": "覆盖检查未完成", "hint": "请人工对照完整纪要。"}
+            )
             self._event(
                 workspace,
                 "coverage_agent",
@@ -511,6 +533,8 @@ class ContractWorkflowService:
         details = self._template_details(workspace)
         if details["requires_visual_review"] and not visual_review_acknowledged:
             raise InvalidContractInput("请先人工核对图片、图形或图表区域，并明确确认这些区域无需自动填写")
+        if workspace.fields and all(field.status == FieldStatus.OMITTED for field in workspace.fields):
+            raise InvalidContractInput("所有字段均保留空白，请至少填写并确认一项内容；空白原件可在模板库下载")
         if not preview_acknowledged or workspace.stage not in ("ready_to_generate", "generated"):
             raise InvalidContractInput("请先完成所有字段审核并确认合同预览")
         if not workspace.fields or any(

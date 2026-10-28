@@ -170,6 +170,7 @@ class ContractWorkspace(StrictModel):
     extraction_failures: list[dict] = Field(default_factory=list)
     coverage_gaps: list[CoverageGap] = Field(default_factory=list)
     coverage_status: str = "not_run"
+    coverage_error: dict = Field(default_factory=dict)
     agent_questions: list[str] = Field(default_factory=list)
     # 问题是本次主控执行的快照，用户补填后不会自动变成新的对话事实。
     coordination_warnings: list[str] = Field(default_factory=list)

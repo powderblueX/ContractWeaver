@@ -50,7 +50,7 @@ async def model_unavailable(_: Request, error: ModelUnavailable):
     Args:
         error: 需要映射为安全公开错误的异常。
     """
-    return JSONResponse(status_code=503, content={"detail": str(error)})
+    return JSONResponse(status_code=503, content={"detail": str(error), "error": error.public_error()})
 
 
 @app.exception_handler(InvalidContractInput)

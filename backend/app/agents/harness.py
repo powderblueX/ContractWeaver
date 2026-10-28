@@ -197,6 +197,8 @@ class ContractHarness:
         except BaseException as error:
             step["status"] = "interrupted" if isinstance(error, asyncio.CancelledError) else "failed"
             step["error_type"] = type(error).__name__  # no provider payload or secret-bearing errors
+            if callable(getattr(error, "public_error", None)):
+                step["error"] = error.public_error()
             raise
         finally:
             step["elapsed_seconds"] = round(monotonic() - started, 1)

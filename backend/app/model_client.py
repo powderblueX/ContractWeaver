@@ -14,7 +14,18 @@ from app.observability import operations
 class ModelUnavailable(RuntimeError):
     """表示模型配置、连接或结构化结果不能用于本次任务。"""
 
-    pass
+    def __init__(
+        self, message, *, code="model_unavailable", hint="可稍后重试，或先手动填写。", retryable=True
+    ):
+        """保存可公开的故障分类与恢复建议，消息由应用生成。"""
+        super().__init__(message)
+        self.code = code
+        self.hint = hint
+        self.retryable = retryable
+
+    def public_error(self):
+        """返回界面和运行日志共用的公开错误信息。"""
+        return {"code": self.code, "message": str(self), "hint": self.hint, "retryable": self.retryable}
 
 
 StructuredResult = TypeVar("StructuredResult", bound=BaseModel)
@@ -55,7 +66,12 @@ class ChatModel:
         """
         if not self.settings.model_configured:
             missing = ", ".join(self.settings.missing_model_settings)
-            raise ModelUnavailable(f"请在后端 .env 配置 {missing}，然后重启服务")
+            raise ModelUnavailable(
+                f"请在后端 .env 配置 {missing}，然后重启服务",
+                code="model_config",
+                hint="请联系部署者补齐后端模型配置并重启服务。你可以先手动选择模板、填写合同。",
+                retryable=False,
+            )
         payload = {
             "model": self.settings.llm_model,
             "messages": messages,
@@ -94,6 +110,8 @@ class ChatModel:
                 raise
             operations.model_event("response", self.settings.llm_model)
             body = response.json()
+            if not isinstance(body, dict):
+                raise ValueError("模型响应应为 JSON 对象")
             if runtime:
                 runtime.record_usage(body.get("usage"))
             choice = body["choices"][0]
@@ -101,7 +119,9 @@ class ChatModel:
                 raise ValueError("模型候选结果格式无效")
             if choice.get("finish_reason") == "length":
                 raise ModelUnavailable(
-                    "模型输出达到长度上限；请减少 LAW_FIELDS_PER_BATCH 或增加 LAW_LLM_MAX_TOKENS 后重试"
+                    "模型输出达到长度上限，本次结果未完整返回",
+                    code="output_truncated",
+                    hint="请联系部署者减少每批字段数或增加输出额度后重试；也可人工填写未完成部分。",
                 )
             message = choice["message"]
             if not isinstance(message, dict):
@@ -128,11 +148,39 @@ class ChatModel:
                 message = "模型请求不兼容，请检查 LAW_LLM_MODEL 与 LAW_LLM_JSON_MODE；不支持 JSON 模式时可配置 prompt"
             else:
                 message = f"模型服务返回 HTTP {status}，请检查服务状态"
-            raise ModelUnavailable(message) from exc
+            code = {
+                401: "model_auth",
+                403: "model_auth",
+                404: "model_endpoint",
+                429: "model_rate_limit",
+                400: "model_format",
+            }.get(status, "model_provider")
+            hint = (
+                "请联系部署者检查模型密钥、模型名称和接口配置；你可以先手动选择模板或填写。"
+                if status in (400, 401, 403, 404)
+                else "模型服务暂不可用或额度受限，请稍后重试；持续失败时请联系部署者检查服务状态与余额。"
+            )
+            raise ModelUnavailable(
+                message, code=code, hint=hint, retryable=status not in (400, 401, 403, 404)
+            ) from exc
         except httpx.TimeoutException as exc:
-            raise ModelUnavailable("模型服务请求超时，请检查连接或 LAW_REQUEST_TIMEOUT") from exc
-        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
-            raise ModelUnavailable("模型服务连接失败或响应格式不兼容，请检查模型配置") from exc
+            raise ModelUnavailable(
+                "模型服务响应超时",
+                code="model_timeout",
+                hint="可稍后重试。本地部署时检查网络、VPN/代理与超时设置；远程部署请联系服务维护者。",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ModelUnavailable(
+                "后端暂时无法连接模型服务",
+                code="model_network",
+                hint="本地部署请检查网络、VPN/代理或防火墙后重试；远程部署请联系服务维护者检查服务器网络。",
+            ) from exc
+        except (KeyError, IndexError, ValueError, TypeError) as exc:
+            raise ModelUnavailable(
+                "模型接口返回的数据格式无法解析",
+                code="model_response",
+                hint="请重试；持续出现时请联系部署者检查模型接口兼容性。已保存的任务可以继续人工填写。",
+            ) from exc
 
     async def generate_structured(
         self, instruction: str, inputs: dict, schema: type[StructuredResult]
@@ -173,7 +221,9 @@ class ChatModel:
             except (ValidationError, ValueError, TypeError, IndexError):
                 if attempt == self.settings.structured_output_retries:
                     raise ModelUnavailable(
-                        "模型未返回有效的结构化结果，请重试或更换支持 JSON 输出的模型"
+                        "模型未返回有效的结构化结果",
+                        code="model_schema",
+                        hint="请求已收到响应，但内容未通过结构校验。可重试未完成部分；持续失败请联系部署者检查模型与 JSON 输出配置。",
                     ) from None
                 messages.append({"role": "assistant", "content": message.get("content") or ""})
                 messages.append(

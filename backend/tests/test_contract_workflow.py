@@ -655,6 +655,34 @@ class ContractWorkflowTests(TestCase):
             expected=400,
         )
 
+    def test_all_failed_batches_skip_coverage_and_keep_public_recovery_details(self):
+        """全部提取失败时保留任务和错误分类，并跳过后续模型检查。"""
+
+        class FailedTeam(DeterministicAgentTeam):
+            """模拟提取格式失败。"""
+
+            async def extract(self, *_):
+                """返回可公开的结构校验错误。"""
+                raise ModelUnavailable("模型结果格式无效", code="model_schema", hint="重试失败批次")
+
+            async def review_coverage(self, *_):
+                """禁止在全部批次失败后请求覆盖检查。"""
+                raise AssertionError("coverage should be skipped")
+
+        workspace = self.transition(self.create_workspace(), "analyze")
+        workspace = self.transition(
+            workspace, "template", {"template_id": workspace["recommendations"][0]["id"]}
+        )
+        with patch("app.services.contract_workflow.create_agent_team", FailedTeam):
+            workspace = self.transition(workspace, "extract")
+        self.assertEqual(workspace["coverage_status"], "skipped")
+        self.assertEqual(workspace["extraction_failures"][0]["error"]["code"], "model_schema")
+        self.assertEqual(workspace["last_run"]["status"], "partial")
+        failed_step = next(
+            step for step in workspace["last_run"]["harness"]["steps"] if step["status"] == "failed"
+        )
+        self.assertEqual(failed_step["error"]["code"], "model_schema")
+
     def test_failed_batches_can_retry_without_overwriting_confirmed_fields(self):
         """Verify failed batches can retry without overwriting confirmed fields."""
         document = Document()

@@ -99,6 +99,34 @@ def choose(action, **kwargs):
 class CoordinationTests(IsolatedAsyncioTestCase):
     """测试夹具或替身：CoordinationTests，用于隔离验证本模块行为。"""
 
+    async def test_retrieval_failure_preserves_analysis_and_offers_manual_selection(self):
+        """检索工具异常后保留分析，返回手动选择引导且隐藏内部路径。"""
+        analysis = NegotiationAnalysis(summary="保管约定", contract_type="保管", search_query="保管合同")
+        decisions = iter([choose("analyze_record"), choose("retrieve_templates", search_query="保管合同")])
+
+        async def analyze(_):
+            """返回已完成的分析。"""
+            return analysis
+
+        async def decide(*_):
+            """按顺序提出分析和检索动作。"""
+            return next(decisions)
+
+        def search(*_, **__):
+            """模拟目录内部异常。"""
+            raise OSError("private/internal/path")
+
+        team = SimpleNamespace(
+            supervisor=SimpleNamespace(decide=decide), analysis=SimpleNamespace(analyze=analyze)
+        )
+        result = await NegotiationCoordinator(
+            team, SimpleNamespace(search_templates=search), self.settings()
+        ).run(SOURCE, "保管合同")
+        self.assertEqual(result[0], analysis)
+        self.assertEqual(result[1], [])
+        self.assertIn("模板库", result[4][0])
+        self.assertNotIn("private/internal", result[4][0])
+
     def settings(self, **kwargs):
         """创建不读取私有密钥的测试配置。"""
         return Settings(_env_file=None, **kwargs)
