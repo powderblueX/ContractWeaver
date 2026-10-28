@@ -185,6 +185,20 @@
 .preview-blocked p {
   line-height: 1.8;
 }
+.recovery-notice {
+  margin: 16px 32px;
+  border: 1px solid #e5cda4;
+  background: #fff8eb;
+  overflow-wrap: anywhere;
+}
+.recovery-notice .inline-actions {
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.review-issue p:last-of-type {
+  margin-bottom: 12px;
+}
 .contract-paper {
   margin: 24px 0;
   padding: 28px;
@@ -222,6 +236,9 @@
   }
   .next-step-card,
   .operation-card {
+    margin: 12px 16px;
+  }
+  .recovery-notice {
     margin: 12px 16px;
   }
   .contract-paper {

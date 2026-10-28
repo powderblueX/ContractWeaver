@@ -4,11 +4,13 @@ import { onMounted, ref } from 'vue'
 import { contractApi } from '../contractApi'
 import { downloadFile } from '../../../shared/httpClient'
 import { readableText } from '../fieldPresentation'
+import { failureGuidance } from '../failureGuidance'
 
 const props = defineProps({
   recommendations: { type: Array, default: () => [] },
   selectedTemplate: Object,
   busy: Boolean,
+  recommendationState: { type: String, default: 'not_run' },
 })
 const emit = defineEmits(['select'])
 const query = ref('')
@@ -17,6 +19,7 @@ const offset = ref(0)
 const page = ref({ items: [], total: 0, limit: 24 })
 const loading = ref(false)
 const error = ref('')
+const errorHint = ref('')
 const detail = ref(null)
 const inspectingId = ref(null)
 const downloading = ref(false)
@@ -32,6 +35,8 @@ async function browse(reset = false) {
   if (reset) offset.value = 0
   const sequence = ++browseSequence
   loading.value = true
+  error.value = ''
+  errorHint.value = ''
   try {
     const result = await contractApi.browseTemplates({
       query: query.value,
@@ -44,7 +49,10 @@ async function browse(reset = false) {
       error.value = ''
     }
   } catch (reason) {
-    if (sequence === browseSequence) error.value = reason.message
+    if (sequence === browseSequence) {
+      error.value = '模板库暂时未能加载，可能是服务连接或内部检索异常。'
+      errorHint.value = failureGuidance(reason).hint
+    }
   } finally {
     if (sequence === browseSequence) loading.value = false
   }
@@ -62,7 +70,8 @@ async function inspectTemplate(template) {
     const result = await contractApi.templateDetails(template.id)
     if (sequence === detailSequence) detail.value = result
   } catch (reason) {
-    error.value = reason.message
+    error.value = '暂时无法查看这份模板，请稍后再试或选择其他模板。'
+    errorHint.value = failureGuidance(reason).hint
   } finally {
     if (sequence === detailSequence) inspectingId.value = null
   }
@@ -76,7 +85,8 @@ async function downloadOriginal() {
   try {
     await downloadFile(`/contracts/templates/${detail.value.id}/download`, `${detail.value.name}.docx`)
   } catch (reason) {
-    error.value = reason.message
+    error.value = '原始模板下载未完成，请重新打开模板详情后再下载。'
+    errorHint.value = failureGuidance(reason).hint
   } finally {
     downloading.value = false
   }
@@ -103,6 +113,18 @@ onMounted(() => browse())
 
 <template>
   <section class="template-library">
+    <div v-if="!recommendations.length" class="surface" role="status">
+      <h2>
+        {{
+          recommendationState === 'failed'
+            ? '自动推荐暂未完成，您可以直接选择模板'
+            : recommendationState === 'empty'
+              ? '暂未找到推荐候选，请搜索完整模板库'
+              : '可以直接从模板库选择合同'
+        }}
+      </h2>
+      <p>在下方输入合同名称或关键词，查看原件后选用。手动选择后可继续提取或填写字段。</p>
+    </div>
     <div v-if="recommendations.length" class="surface">
       <div class="section-heading">
         <div>
@@ -160,7 +182,14 @@ onMounted(() => browse())
         </select>
         <button class="secondary" :disabled="loading">搜索</button>
       </form>
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <div v-if="error" class="review-issue" role="alert">
+        <p>{{ error }}</p>
+        <p>{{ errorHint }}</p>
+        <button class="secondary" :disabled="loading || busy" @click="browse()">重新加载模板库</button>
+      </div>
+      <p v-if="!loading && !error && !page.total" class="empty-state">
+        没有找到匹配模板，请缩短关键词或将来源切换为“全部来源”后搜索。
+      </p>
       <p v-if="loading" class="muted inline-actions" role="status">
         <span class="loading-spinner" aria-hidden="true" />
         加载模板…

@@ -4,6 +4,43 @@ import { describe, expect, it } from 'vitest'
 import ContractPreviewPanel from '../components/ContractPreviewPanel.vue'
 
 describe('contract preview gate', () => {
+  it('explains an all-blank review without claiming zero pending items blocks it', () => {
+    const wrapper = mount(ContractPreviewPanel, {
+      props: {
+        workspace: {
+          stage: 'field_review',
+          revision: 1,
+          fields: [{ status: 'omitted', value: '' }],
+          selected_template: { id: 'one' },
+          artifacts: [],
+        },
+      },
+    })
+    expect(wrapper.text()).toContain('所有字段都已保留空白')
+    expect(wrapper.text()).toContain('至少填写并确认一项')
+    expect(wrapper.text()).not.toContain('0 项待确认')
+    expect(wrapper.find('input[type=checkbox]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('explains unsaved changes and prevents acknowledging an outdated preview', () => {
+    const wrapper = mount(ContractPreviewPanel, {
+      props: {
+        workspace: {
+          stage: 'ready_to_generate',
+          revision: 1,
+          fields: [{ status: 'confirmed', value: '金额' }],
+          selected_template: { id: 'one' },
+          artifacts: [],
+        },
+        preview: { revision: 1, text: '旧预览' },
+        unsaved: true,
+      },
+    })
+    expect(wrapper.text()).toContain('审核修改尚未保存')
+    expect(wrapper.find('.contract-paper').exists()).toBe(false)
+    expect(wrapper.find('.generate-button').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
   it('never exposes internal placeholders before review and guides back to review', async () => {
     const wrapper = mount(ContractPreviewPanel, {
       props: {

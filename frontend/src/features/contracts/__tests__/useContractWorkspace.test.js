@@ -15,6 +15,42 @@ vi.mock('../contractApi', () => ({
 }))
 
 describe('workspace state', () => {
+  it('keeps observing a server operation when a later progress poll fails', async () => {
+    vi.useFakeTimers()
+    const workflow = useContractWorkspace()
+    workflow.workspace.value = { id: 'network-task', revision: 1 }
+    contractApi.analyze.mockRejectedValue(new TypeError('network lost'))
+    contractApi.activity
+      .mockResolvedValueOnce({ action: 'analyze', status: 'running' })
+      .mockRejectedValue(new Error('poll offline'))
+    contractApi.get.mockResolvedValue({ id: 'network-task', revision: 1 })
+    contractApi.list.mockResolvedValue([])
+    try {
+      await workflow.analyze()
+      await vi.advanceTimersByTimeAsync(1100)
+      expect(workflow.activity.value.status).toBe('running')
+      expect(workflow.progressWarning.value).toContain('暂时无法读取进度')
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+      contractApi.activity.mockResolvedValue({ action: 'analyze', status: 'completed' })
+      await vi.advanceTimersByTimeAsync(1100)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      workflow.reset()
+      vi.useRealTimers()
+    }
+  })
+  it('refuses strict retry preparation when current execution status cannot be verified', async () => {
+    const workflow = useContractWorkspace()
+    const original = { id: 'strict-task', revision: 1 }
+    workflow.workspace.value = original
+    contractApi.get.mockResolvedValue({ ...original, revision: 2 })
+    contractApi.activity.mockRejectedValue(new Error('status offline'))
+    const result = await workflow.open(original.id, true)
+    expect(result).toBeNull()
+    expect(workflow.workspace.value).toEqual(original)
+    expect(workflow.error.value).toContain('status offline')
+    workflow.reset()
+  })
   it('polls factual progress while a model request is pending and clears timers afterwards', async () => {
     vi.useFakeTimers()
     let resolve

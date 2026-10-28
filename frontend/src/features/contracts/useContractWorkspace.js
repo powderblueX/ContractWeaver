@@ -1,6 +1,7 @@
 /** @file 服务端任务状态与异步操作控制，不与字段本地草稿混用。 */
 import { ref, getCurrentScope, onScopeDispose } from 'vue'
 import { contractApi } from './contractApi'
+import { failureGuidance } from './failureGuidance'
 
 /**
  * 集中管理服务端快照、异步操作和进度轮询，页面草稿由子组件单独持有。
@@ -13,6 +14,8 @@ export function useContractWorkspace() {
   const preview = ref(null)
   const busyAction = ref('')
   const error = ref('')
+  const errorInfo = ref(null)
+  const failedAction = ref('')
   const activity = ref(null)
   const elapsedSeconds = ref(0)
   const progressWarning = ref('')
@@ -51,10 +54,11 @@ export function useContractWorkspace() {
       if (sequence === operationSequence) {
         activity.value = result
         progressWarning.value = ''
+        return true
       }
     } catch (reason) {
       if (sequence === operationSequence && (timedOut || reason.name !== 'AbortError'))
-        progressWarning.value = '进度暂时不可达；主请求仍在等待，未伪造完成百分比。'
+        progressWarning.value = '暂时无法读取进度，请检查网络。服务器可能仍在处理，请勿重复提交。'
     } finally {
       clearTimeout(timeout)
       pollInFlight = false
@@ -75,8 +79,8 @@ export function useContractWorkspace() {
     if (!id || !contractApi.activity) return
     progressTimer = setInterval(async () => {
       if (pollInFlight) return
-      await fetchProgress(sequence, id)
-      if (sequence !== operationSequence || activity.value?.status === 'running') return
+      const fetched = await fetchProgress(sequence, id)
+      if (!fetched || sequence !== operationSequence || activity.value?.status === 'running') return
       stopProgress()
       try {
         workspace.value = await contractApi.get(id)
@@ -96,8 +100,11 @@ export function useContractWorkspace() {
    */
   async function perform(label, operation, observe = false) {
     if (busyAction.value) return null
+    stopProgress()
     busyAction.value = label
     error.value = ''
+    errorInfo.value = null
+    failedAction.value = ''
     progressWarning.value = ''
     elapsedSeconds.value = 0
     const sequence = ++operationSequence
@@ -112,11 +119,22 @@ export function useContractWorkspace() {
       return await operation()
     } catch (reason) {
       error.value = reason.message
+      errorInfo.value = failureGuidance(reason)
+      failedAction.value = label
+      if (observe && id) {
+        await fetchProgress(sequence, id)
+        try {
+          const latest = await contractApi.get(id)
+          if (latest && sequence === operationSequence) workspace.value = latest
+        } catch {
+          progressWarning.value = '尚未核实服务器执行结果，请恢复连接后刷新任务。'
+        }
+      }
       return null
     } finally {
       stopProgress()
       busyAction.value = ''
-      if (activity.value?.status === 'running') followRunningOperation()
+      if (observe && activity.value?.status === 'running') followRunningOperation()
     }
   }
 
@@ -160,6 +178,8 @@ export function useContractWorkspace() {
     preview,
     busyAction,
     error,
+    errorInfo,
+    failedAction,
     activity,
     elapsedSeconds,
     progressWarning,
@@ -176,15 +196,17 @@ export function useContractWorkspace() {
     /**
      * 打开任务并尝试补读持久进度，进度读取失败仍保留任务。
      * @param {string} id 任务或生成文件的受控标识。
+     * @param {boolean} requireActivity 重试前是否必须成功核实执行状态。
      */
-    open: (id) =>
+    open: (id, requireActivity = false) =>
       mutate('打开任务', async () => {
         const task = await contractApi.get(id)
         if (contractApi.activity) {
           try {
             const live = await contractApi.activity(id)
             if (live?.action) task.last_run = live
-          } catch {
+          } catch (reason) {
+            if (requireActivity) throw reason
             progressWarning.value = '暂时无法读取执行进度，请稍后刷新。'
           }
         }
@@ -268,6 +290,8 @@ export function useContractWorkspace() {
       workspace.value = null
       preview.value = null
       error.value = ''
+      errorInfo.value = null
+      failedAction.value = ''
       activity.value = null
     },
   }

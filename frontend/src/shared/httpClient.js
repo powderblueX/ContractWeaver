@@ -7,14 +7,23 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 /** 发送带登录会话的 API 请求。 */
 async function authenticatedFetch(path, options = {}) {
   const session = getSession()
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
-      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      ...options.headers,
-    },
-  })
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        ...options.headers,
+      },
+    })
+  } catch (reason) {
+    if (reason.name === 'AbortError') throw reason
+    const error = new Error('暂时无法连接应用服务。')
+    error.code = 'browser_network'
+    error.hint = '请检查网络和 VPN/代理设置，并确认后端已启动。操作可能仍在服务器执行，请先刷新任务状态。'
+    throw error
+  }
   if (response.status === 401 && session && !path.startsWith('/auth/login')) {
     clearSession()
     window.location.assign('/login')
@@ -22,13 +31,20 @@ async function authenticatedFetch(path, options = {}) {
   }
   if (!response.ok) {
     let detail = '请求失败'
+    let publicError = null
     try {
-      detail = (await response.json()).detail || detail
+      const body = await response.json()
+      publicError = body.error
+      detail =
+        response.status >= 500
+          ? publicError?.message || '服务暂时无法完成请求，请稍后重试。'
+          : body.detail || detail
     } catch {
       /* Keep fallback for non-JSON errors. */
     }
     const error = new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
     error.status = response.status
+    error.error = publicError
     throw error
   }
   return response

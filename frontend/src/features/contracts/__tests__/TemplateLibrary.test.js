@@ -7,6 +7,25 @@ import { contractApi } from '../contractApi'
 vi.mock('../contractApi', () => ({ contractApi: { browseTemplates: vi.fn(), templateDetails: vi.fn() } }))
 
 describe('manual template choice', () => {
+  it('recovers from an internal library failure through an explicit reload', async () => {
+    contractApi.browseTemplates
+      .mockRejectedValueOnce(Object.assign(new Error('private server trace'), { status: 500 }))
+      .mockResolvedValueOnce({
+        items: [{ id: 'retry', name: '保管合同', group: '部委' }],
+        total: 1,
+        limit: 24,
+      })
+    const wrapper = mount(TemplateLibrary, { props: { recommendationState: 'failed' } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('自动推荐暂未完成')
+    expect(wrapper.text()).toContain('模板库暂时未能加载')
+    expect(wrapper.text()).not.toContain('private server trace')
+    await wrapper.find('[role=alert] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('保管合同')
+    wrapper.unmount()
+  })
   it('shows a named but unsupported template without allowing selection', async () => {
     contractApi.browseTemplates.mockResolvedValue({ items: [], total: 0, limit: 24 })
     const wrapper = mount(TemplateLibrary, {

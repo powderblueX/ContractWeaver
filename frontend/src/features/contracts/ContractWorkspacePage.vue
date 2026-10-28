@@ -10,6 +10,7 @@ import TemplateLibrary from './components/TemplateLibrary.vue'
 import FieldReviewPanel from './components/FieldReviewPanel.vue'
 import ContractPreviewPanel from './components/ContractPreviewPanel.vue'
 import OperationProgress from './components/OperationProgress.vue'
+import { failureGuidance } from './failureGuidance'
 import './workspace.css'
 import './experience.css'
 
@@ -23,6 +24,8 @@ const {
   preview,
   busyAction,
   error,
+  errorInfo,
+  failedAction,
   activity,
   elapsedSeconds,
   progressWarning,
@@ -67,6 +70,29 @@ const fieldCounts = computed(() => ({
     workspace.value?.fields.filter((field) => ['conflict', 'unverified'].includes(field.status)).length || 0,
 }))
 const busy = computed(() => Boolean(busyAction.value) || activity.value?.status === 'running')
+const recovery = computed(() => {
+  if (error.value) return errorInfo.value || failureGuidance({ message: error.value })
+  const failure = workspace.value?.extraction_failures?.[0]
+  if (failure) return failureGuidance(failure.error?.code ? failure.error : { message: failure.message })
+  if (workspace.value?.coverage_error?.message) return failureGuidance(workspace.value.coverage_error)
+  return null
+})
+const retryLabel = computed(() => {
+  if (!recovery.value?.retryable || busy.value) return ''
+  if (
+    workspace.value?.extraction_failures?.some((failure) =>
+      workspace.value.fields.some(
+        (field) =>
+          failure.field_names?.includes(field.name) && !['confirmed', 'omitted'].includes(field.status)
+      )
+    )
+  )
+    return '重试失败批次'
+  if (workspace.value?.extraction_failures?.length) return ''
+  if (failedAction.value?.includes('分析')) return '重新分析并推荐'
+  if (failedAction.value?.includes('提取')) return '重新提取'
+  return ''
+})
 const nextStep = computed(() => {
   const stage = workspace.value?.stage
   if (workspace.value?.selected_template?.requires_reselection)
@@ -100,7 +126,11 @@ const nextStep = computed(() => {
     }
   if (stage === 'field_review')
     return {
-      title: `下一步：审核填写内容（还剩 ${(workspace.value?.fields.length || 0) - reviewedCount.value} 项）`,
+      title:
+        reviewedCount.value === workspace.value?.fields.length &&
+        !workspace.value.fields.some((field) => field.status === 'confirmed')
+          ? '下一步：至少填写并确认一项内容'
+          : `下一步：审核填写内容（还剩 ${(workspace.value?.fields.length || 0) - reviewedCount.value} 项）`,
       detail: '核对并确认已有值；纪要不完整时，可一键将未确定空白暂留空，先生成待完善草稿，后续再补充。',
       button: '进入内容审核',
       action: 'review',
@@ -170,7 +200,22 @@ async function createWorkspace(source) {
  * 发起记录分析与模板检索，完成后切换到模板选择页。
  */
 async function analyzeRecord() {
-  if (await workflow.analyze()) activeTab.value = 'templates'
+  const result = await workflow.analyze()
+  if (result || (workspace.value && activity.value?.status !== 'running')) activeTab.value = 'templates'
+}
+
+/** 先核实服务端状态，再由用户明确重试未完成操作。 */
+async function retryOperation() {
+  if (hasUnsavedFields.value && !confirmDiscard()) return
+  const action = failedAction.value
+  const previousRevision = workspace.value.revision
+  const latest = await workflow.open(workspace.value.id, true)
+  if (!latest || activity.value?.status === 'running') return
+  hasUnsavedFields.value = false
+  if (latest.extraction_failures?.length) return extractFields(true)
+  if (latest.revision > previousRevision) return
+  if (action?.includes('分析') && !latest.selected_template) return analyzeRecord()
+  if (action?.includes('提取')) return extractFields(false)
 }
 /**
  * 提交用户明确选择的模板及当前修订，不自动批准填写内容。
@@ -356,10 +401,40 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
       <p v-if="systemStatus && !systemStatus.model_configured" class="notice">
         模型服务尚未配置。可以先保存记录、浏览并选择模板；部署者完成模型 API 配置后即可分析和提取。
       </p>
-      <div v-if="error" class="error-banner" role="alert">
-        {{ error }}
-        <button aria-label="关闭错误提示" @click="error = ''">×</button>
-      </div>
+      <section v-if="recovery" class="surface recovery-notice" role="alert" aria-label="操作恢复指引">
+        <h2>{{ recovery.title }}</h2>
+        <p>{{ recovery.message }}</p>
+        <p>{{ recovery.hint }}</p>
+        <p v-if="workspace" class="small-note">已保存的协商记录与审核内容仍可继续使用。</p>
+        <p v-if="retryLabel" class="small-note">重试会重新调用模型；提交前会先核实任务状态。</p>
+        <div class="inline-actions">
+          <button v-if="retryLabel && workspace" class="primary" :disabled="busy" @click="retryOperation">
+            {{ retryLabel }}
+          </button>
+          <button v-if="workspace" class="secondary" :disabled="busy" @click="openWorkspace(workspace.id)">
+            刷新任务状态
+          </button>
+          <button
+            v-if="workspace && !workspace.selected_template"
+            class="secondary"
+            :disabled="busy"
+            @click="activeTab = 'templates'"
+          >
+            去模板库手动选择
+          </button>
+          <button
+            v-if="workspace?.selected_template"
+            class="secondary"
+            :disabled="busy"
+            @click="activeTab = 'review'"
+          >
+            继续手动填写
+          </button>
+          <button v-if="!workspace" class="secondary" :disabled="busy" @click="workflow.initialize()">
+            重新连接服务
+          </button>
+        </div>
+      </section>
       <Transition name="panel">
         <OperationProgress
           v-if="busy || activity?.action"
@@ -486,6 +561,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               :key="workspace.id"
               :recommendations="workspace.recommendations"
               :selected-template="workspace.selected_template"
+              :recommendation-state="
+                workspace.analysis
+                  ? workspace.coordination_warnings?.length
+                    ? 'failed'
+                    : 'empty'
+                  : failedAction?.includes('分析')
+                    ? 'failed'
+                    : 'not_run'
+              "
               :busy="busy"
               @select="selectTemplate"
             />
@@ -540,12 +624,18 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                   </article>
                   <p>这是提取时的检查快照。修改后请重新对照；不会自动替你增写条款或修改原件固定文字。</p>
                 </div>
-                <p v-if="['failed', 'unverified'].includes(workspace.coverage_status)" class="review-issue">
-                  全合同覆盖检查未完成或部分引用未通过核验，请人工对照全部纪要，不要将当前字段视作完整覆盖。
+                <p
+                  v-if="['failed', 'unverified', 'skipped'].includes(workspace.coverage_status)"
+                  class="review-issue"
+                >
+                  {{
+                    workspace.coverage_error?.message || '全合同覆盖检查未完成或部分引用未通过核验'
+                  }}。请人工对照全部纪要。
                 </p>
                 <div v-if="workspace.extraction_failures?.length" class="review-issue">
                   <strong>
-                    {{ workspace.extraction_failures.length }} 个批次未完成，其余成功结果已保存。
+                    {{ workspace.extraction_failures.length }}
+                    个批次未完成；已保存的成功结果和人工审核可继续使用。
                   </strong>
                   <p v-for="(failure, index) in workspace.extraction_failures" :key="index">
                     {{ failure.field_names.length }} 个字段：{{ failure.message }}
@@ -600,7 +690,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
               v-show="activeTab === 'preview'"
               :workspace="workspace"
               :preview="preview"
-              :busy="busy || hasUnsavedFields"
+              :busy="busy"
+              :unsaved="hasUnsavedFields"
               @preview="workflow.loadPreview"
               @generate="generateContract"
               @download="downloadArtifact"

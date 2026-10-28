@@ -4,6 +4,34 @@ import { describe, expect, it } from 'vitest'
 import OperationProgress from '../components/OperationProgress.vue'
 
 describe('factual operation progress', () => {
+  it('keeps all-failed progress at zero and displays the public failure reason', () => {
+    const wrapper = mount(OperationProgress, {
+      props: {
+        activity: {
+          status: 'partial',
+          batches: [{ index: 1, status: 'failed' }],
+          harness: {
+            plan: [],
+            limits: { requests: 10 },
+            steps: [
+              {
+                index: 1,
+                label: '字段提取',
+                status: 'failed',
+                error_type: 'ModelUnavailable',
+                error: { message: '模型返回结构无效', hint: '重试失败批次' },
+              },
+            ],
+          },
+        },
+      },
+    })
+    expect(wrapper.find('progress').attributes('value')).toBe('0')
+    expect(wrapper.text()).toContain('自动填写未完成')
+    expect(wrapper.text()).toContain('模型返回结构无效')
+    expect(wrapper.text()).not.toContain('ModelUnavailable')
+    wrapper.unmount()
+  })
   it('shows actual main-agent tool choice rather than presenting capabilities as a fixed plan', () => {
     const wrapper = mount(OperationProgress, {
       props: {
@@ -88,8 +116,8 @@ describe('factual operation progress', () => {
     expect(wrapper.find('.loading-spinner').exists()).toBe(true)
     expect(wrapper.text()).toContain('12 秒')
     expect(wrapper.text()).toContain('实际模型请求 3 次')
-    expect(wrapper.find('progress').attributes('value')).toBe('2')
-    expect(wrapper.text()).toContain('不是合同审核完成率')
+    expect(wrapper.find('progress').attributes('value')).toBe('1')
+    expect(wrapper.text()).toContain('成功 1 批 · 失败 1 批')
     wrapper.unmount()
   })
   it('does not invent a percentage while waiting for the server', () => {

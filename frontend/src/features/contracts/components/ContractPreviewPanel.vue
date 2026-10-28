@@ -3,7 +3,7 @@
 import { computed, ref, watch } from 'vue'
 import { readableText } from '../fieldPresentation'
 
-const props = defineProps({ workspace: Object, preview: Object, busy: Boolean })
+const props = defineProps({ workspace: Object, preview: Object, busy: Boolean, unsaved: Boolean })
 const emit = defineEmits(['preview', 'generate', 'download', 'back-review'])
 const acknowledged = ref(false)
 const visualAcknowledged = ref(false)
@@ -11,6 +11,20 @@ const visualReviewRequired = computed(() =>
   Boolean(props.workspace.selected_template?.requires_visual_review)
 )
 const ready = computed(() => ['ready_to_generate', 'generated'].includes(props.workspace.stage))
+const blockedReason = computed(() => {
+  if (props.unsaved) return '审核修改尚未保存，请先返回内容审核保存修改，再载入最新预览。'
+  if (props.workspace.selected_template?.requires_reselection)
+    return '模板填写规则已更新，请重新载入模板并审核字段。'
+  if (!props.workspace.fields?.length && !ready.value) return '当前还没有可审核字段，请先选择可填写的模板。'
+  if (pendingCount.value) return `尚有 ${pendingCount.value} 项待确认，请核对已有值、补充缺失或明确留空。`
+  if (
+    !ready.value &&
+    !props.workspace.fields?.some((field) => field.status === 'confirmed' && field.value?.trim())
+  )
+    return '所有字段都已保留空白。请返回内容审核，至少填写并确认一项内容；需要空白原件时，可在模板库下载原始模板。'
+  return ready.value ? '' : '当前审核状态尚未就绪，请返回内容审核保存结果，或刷新任务状态。'
+})
+const canPreview = computed(() => ready.value && !blockedReason.value)
 const previewIsCurrent = computed(() => props.preview?.revision === props.workspace.revision)
 const pendingCount = computed(
   () =>
@@ -42,7 +56,7 @@ watch(
       </div>
       <button
         class="secondary"
-        :disabled="busy || !ready || !workspace.selected_template"
+        :disabled="busy || !canPreview || !workspace.selected_template"
         @click="emit('preview')"
       >
         {{ preview ? '刷新预览' : '载入预览' }}
@@ -52,13 +66,9 @@ watch(
       这里只展示已审核的合同内容，留空区域显示为空线。文字预览不是 Word
       版面渲染，导出后仍需核对表格、换页和签章区域。
     </p>
-    <div v-if="!ready" class="preview-blocked" role="status">
+    <div v-if="blockedReason" class="preview-blocked" role="status">
       <h3>还不能导出：请先完成内容审核</h3>
-      <p>
-        尚有
-        {{ pendingCount }}
-        项待确认。这里不会展示充满内部标识的半成品；请回到审核页核对已有值、补充缺失或明确留空。
-      </p>
+      <p>{{ blockedReason }}</p>
       <button class="primary" :disabled="busy" @click="emit('back-review')">返回内容审核 →</button>
     </div>
     <template v-else-if="preview">
@@ -90,26 +100,34 @@ watch(
       {{ workspace.coverage_gaps.length }}
       项待核对。请回到内容审核查看原文依据和补充建议，并核对现在的合同是否已覆盖；这份预览不代表所有纪要约定已完整写入。
     </p>
-    <p v-if="['failed', 'unverified'].includes(workspace.coverage_status)" class="review-issue">
-      全合同覆盖检查未完整通过，请人工对照完整纪要。
+    <p v-if="['failed', 'unverified', 'skipped'].includes(workspace.coverage_status)" class="review-issue">
+      {{ workspace.coverage_error?.message || '全合同覆盖检查未完整通过' }}。请人工对照完整纪要。
     </p>
     <p v-if="preview?.omitted_fields?.length" class="review-issue">
       已按你的审核保留
       {{ preview.omitted_fields.length }}
       处空白。这是待完善草稿，不代表已具备签署条件。请补充未确定约定，并在导出 Word 中再次核对。
     </p>
-    <label class="checkbox-label">
-      <input v-model="acknowledged" type="checkbox" :disabled="!ready || !previewIsCurrent || busy" />
+    <label v-if="canPreview" class="checkbox-label">
+      <input v-model="acknowledged" type="checkbox" :disabled="!canPreview || !previewIsCurrent || busy" />
       我已对照原始模板核对填写范围、未识别空白及选项，并审查此版本预览，确认生成合同
     </label>
-    <label v-if="visualReviewRequired" class="checkbox-label">
-      <input v-model="visualAcknowledged" type="checkbox" :disabled="!ready || !previewIsCurrent || busy" />
+    <label v-if="canPreview && visualReviewRequired" class="checkbox-label">
+      <input
+        v-model="visualAcknowledged"
+        type="checkbox"
+        :disabled="!canPreview || !previewIsCurrent || busy"
+      />
       我已查看原始 Word 的图片、图形及图表，确认这些保留区域无需自动填写；系统没有对其执行 OCR 或修改
     </label>
     <button
       class="primary generate-button"
       :disabled="
-        busy || !ready || !previewIsCurrent || !acknowledged || (visualReviewRequired && !visualAcknowledged)
+        busy ||
+        !canPreview ||
+        !previewIsCurrent ||
+        !acknowledged ||
+        (visualReviewRequired && !visualAcknowledged)
       "
       @click="emit('generate', { visualReviewAcknowledged: visualAcknowledged })"
     >

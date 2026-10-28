@@ -44,6 +44,46 @@ const clickButton = async (wrapper, label) => {
 }
 
 describe('record-to-contract user flow', () => {
+  it('opens the manual template library after recommendation fails and offers explicit recovery', async () => {
+    const task = {
+      id: 'manual-fallback',
+      title: '会议',
+      source_name: '纪要',
+      source_text: '双方协商保管物品，约定详细内容后另行确认。',
+      revision: 1,
+      stage: 'source_ready',
+      analysis: null,
+      recommendations: [],
+      selected_template: null,
+      fields: [],
+      artifacts: [],
+      events: [],
+    }
+    contractApi.health.mockResolvedValue({ model_configured: true })
+    contractApi.list.mockResolvedValue([{ ...task }])
+    contractApi.get.mockResolvedValue(task)
+    contractApi.analyze.mockRejectedValue(
+      Object.assign(new Error('模型连接超时'), {
+        error: { code: 'model_timeout', message: '模型连接超时', hint: '检查网络后重试', retryable: true },
+      })
+    )
+    contractApi.browseTemplates.mockResolvedValue({
+      items: [{ id: 'manual', name: '保管合同', group: '部委' }],
+      total: 1,
+      limit: 24,
+    })
+    const wrapper = mount(ContractWorkspacePage)
+    await flushPromises()
+    await wrapper.find('.task-row button').trigger('click')
+    await flushPromises()
+    await clickButton(wrapper, '分析记录并推荐模板')
+    expect(wrapper.find('[aria-label="操作恢复指引"]').text()).toContain('检查网络后重试')
+    expect(wrapper.findAll('button').some((button) => button.text() === '去模板库手动选择')).toBe(true)
+    expect(wrapper.findAll('button').some((button) => button.text() === '重新分析并推荐')).toBe(true)
+    expect(wrapper.find('.workflow-tabs .active').text()).toContain('选择模板')
+    expect(wrapper.find('.template-library').text()).toContain('保管合同')
+    wrapper.unmount()
+  })
   it('imports a record, selects a library template, reviews a correction, previews and generates', async () => {
     const field = {
       name: '金额',

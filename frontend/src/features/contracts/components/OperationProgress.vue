@@ -6,6 +6,8 @@ const batches = computed(() => props.activity?.batches || [])
 const completed = computed(
   () => batches.value.filter((batch) => ['completed', 'failed'].includes(batch.status)).length
 )
+const succeeded = computed(() => batches.value.filter((batch) => batch.status === 'completed').length)
+const failed = computed(() => batches.value.filter((batch) => batch.status === 'failed').length)
 const labels = {
   queued: '排队',
   extracting: '提取中',
@@ -36,7 +38,9 @@ const actionLabels = {
           (activity?.status === 'running'
             ? '服务器正在处理此任务'
             : activity?.status === 'partial'
-              ? '部分处理完成，需要重试'
+              ? batches.length && failed === batches.length
+                ? '自动填写未完成，可重试或手动填写'
+                : '部分处理未完成，请查看恢复指引'
               : ['failed', 'interrupted'].includes(activity?.status)
                 ? '处理未完成'
                 : '最近一次处理已结束')
@@ -47,20 +51,24 @@ const actionLabels = {
     <p>{{ activity?.message || '正在等待服务器响应。无需重复点击；请保持此页面打开。' }}</p>
     <p v-if="activity?.requests_started" class="small-note">
       实际模型请求 {{ activity.requests_started }} 次 · 收到成功 HTTP 响应
-      {{ activity.responses_received }} 次 · 请求失败 {{ activity.requests_failed }} 次 · {{ activity.model }}
+      {{ activity.responses_received }} 次 · 连接/HTTP 失败 {{ activity.requests_failed }} 次 ·
+      {{ activity.model }}
       <br />
-      收到响应不等于字段提取正确，仍需校验和人工审查。
+      响应还需经过内容格式校验与复核；实际完成情况见下方批次结果。
     </p>
     <p v-else-if="activity && !label" class="small-note">
       此处理记录没有可核验的模型请求计数；不能据此断言模型已成功调用。
     </p>
     <template v-if="batches.length">
       <progress
-        :value="completed"
+        :value="succeeded"
         :max="batches.length"
-        :aria-label="`已处理 ${completed} / ${batches.length} 批`"
+        :aria-label="`成功 ${succeeded} / ${batches.length} 批，失败 ${failed} 批`"
       />
-      <p>已处理 {{ completed }} / {{ batches.length }} 批（含失败批次），不是合同审核完成率。</p>
+      <p>
+        成功 {{ succeeded }} 批 · 失败 {{ failed }} 批 · 已结束 {{ completed }} /
+        {{ batches.length }} 批。字段仍需人工审核。
+      </p>
       <div class="batch-grid">
         <span
           v-for="batch in batches"
@@ -74,7 +82,7 @@ const actionLabels = {
     </template>
     <div v-else-if="running" class="indeterminate-track"><span /></div>
     <details v-if="harness" class="harness-trace">
-      <summary>查看 Agent 执行计划与决策摘要 · {{ harness.steps?.length || 0 }} 个步骤</summary>
+      <summary>查看处理详情与原因 · {{ harness.steps?.length || 0 }} 个步骤</summary>
       <p class="small-note">
         以下是实际执行轨迹和模型提供的简短结论说明，不是内部完整思维链，也不代表已获人工确认。
       </p>
@@ -107,9 +115,10 @@ const actionLabels = {
         <p v-else class="small-note">
           {{ step.status === 'running' ? '等待本步骤返回结果' : '此步骤未提供模型决策摘要' }}
         </p>
-        <p v-if="step.error_type" class="review-issue">
-          {{ step.error_type }}：此步骤未完成，请查看任务错误并重试或人工补充。
-        </p>
+        <div v-if="step.error_type" class="review-issue">
+          <p>{{ step.error?.message || '此步骤未完成，可重试或继续人工填写。' }}</p>
+          <p v-if="step.error?.hint">{{ step.error.hint }}</p>
+        </div>
       </article>
     </details>
     <p v-if="warning" class="review-issue">{{ warning }}</p>
