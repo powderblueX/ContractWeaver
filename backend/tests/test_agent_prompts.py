@@ -96,7 +96,7 @@ class PromptWiringTests(IsolatedAsyncioTestCase):
                 {"summary": "待确认", "contract_type": "保管", "search_query": "保管合同"},
                 RECORD_ANALYSIS_PROMPT,
             ),
-            (FieldExtractionAgent, {"fields": []}, FIELD_EXTRACTION_PROMPT),
+            (FieldExtractionAgent, {"fields": [{"field_name": "f001", "value": "", "status": "missing"}]}, FIELD_EXTRACTION_PROMPT),
             (FieldReviewAgent, {"findings": []}, FIELD_REVIEW_PROMPT),
             (ContractCoverageAgent, {"gaps": []}, CONTRACT_COVERAGE_PROMPT),
         ]

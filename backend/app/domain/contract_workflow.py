@@ -84,6 +84,7 @@ class CoverageGap(StrictModel):
     summary: str = Field(max_length=1000)
     evidence: SourceEvidence
     suggestion: str = Field(max_length=1000)
+    target_fields: list[str] = Field(default_factory=list, max_length=5)
 
 
 class CoverageResult(StrictModel):

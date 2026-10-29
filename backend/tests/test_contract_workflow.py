@@ -212,6 +212,53 @@ class ContractWorkflowTests(TestCase):
         ]
         return self.transition(workspace, "fields", {"decisions": decisions}, method="patch")
 
+    def test_all_explicitly_omitted_fields_export_a_blank_draft(self):
+        """Export a real DOCX after explicit blank review, without inventing a filled value."""
+        workspace = self.selected_workspace()
+        decisions = [{"name": field["name"], "action": "omit", "note": "信息未确定，草稿留空"}
+                     for field in workspace["fields"]]
+        workspace = self.transition(workspace, "fields", {"decisions": decisions}, method="patch")
+        self.assertEqual(workspace["stage"], "ready_to_generate")
+        preview = self.client.get(f"/api/v1/workspaces/{workspace['id']}/preview", headers=self.headers).json()
+        self.assertEqual(preview["pending_count"], 0)
+        self.assertEqual(len(preview["omitted_fields"]), len(decisions))
+        self.transition(workspace, "generate", {"preview_acknowledged": False}, expected=400)
+        generated = self.transition(workspace, "generate", {"preview_acknowledged": True})
+        artifact = generated["artifacts"][0]
+        self.assertTrue(artifact["is_draft"])
+        self.assertEqual(artifact["filled_fields"], [])
+        download = self.client.get(f"/api/v1/contracts/{artifact['id']}/download", headers=self.headers)
+        self.assertEqual(download.status_code, 200)
+        document = Document(BytesIO(download.content))
+        self.assertEqual(len(document.tables), 1)
+        self.assertNotIn("{", document.paragraphs[0].text)
+        self.assertNotIn("{", document.tables[0].cell(0, 0).text)
+
+    def test_legacy_all_blank_task_recovers_without_repeating_review(self):
+        """Old field_review snapshots become exportable without changing user decisions."""
+        workspace = self.selected_workspace()
+        decisions = [{"name": field["name"], "action": "omit", "note": "旧任务保留空白"}
+                     for field in workspace["fields"]]
+        workspace = self.transition(workspace, "fields", {"decisions": decisions}, method="patch")
+        workspace["stage"] = "field_review"
+        with get_database().connection() as connection:
+            connection.execute("UPDATE contract_workspaces SET stage=?,state_json=? WHERE id=?",
+                               ("field_review", json.dumps(workspace, ensure_ascii=False), workspace["id"]))
+        loaded = self.client.get(f"/api/v1/workspaces/{workspace['id']}", headers=self.headers).json()
+        self.assertEqual(loaded["stage"], "ready_to_generate")
+        self.assertEqual(loaded["revision"], workspace["revision"])
+        generated = self.transition(workspace, "generate", {"preview_acknowledged": True})
+        self.assertTrue(generated["artifacts"][0]["is_draft"])
+
+    def test_partially_reviewed_blanks_still_cannot_export(self):
+        """Blank export requires an explicit decision on every detected position."""
+        workspace = self.selected_workspace()
+        workspace = self.transition(workspace, "fields", {"decisions": [
+            {"name": field["name"], "action": "omit", "note": "本次留空"}
+            for field in workspace["fields"][:-1]]}, method="patch")
+        self.assertEqual(workspace["stage"], "field_review")
+        self.transition(workspace, "generate", {"preview_acknowledged": True}, expected=400)
+
     def test_shared_omission_reason_allows_draft_and_later_completion(self):
         """Verify shared omission reason allows draft and later completion."""
         workspace = self.selected_workspace()
@@ -220,7 +267,7 @@ class ContractWorkflowTests(TestCase):
             for field in workspace["fields"]
         ]
         workspace = self.transition(workspace, "fields", {"decisions": decisions}, method="patch")
-        self.assertEqual(workspace["stage"], "field_review")
+        self.assertEqual(workspace["stage"], "ready_to_generate")
         workspace = self.transition(
             workspace,
             "fields",
@@ -307,6 +354,31 @@ class ContractWorkflowTests(TestCase):
             next(field for field in workspace["fields"] if field["name"] == "甲方名称")["value"], "华明公司"
         )
 
+    def test_failed_coverage_can_retry_without_reextracting_fields(self):
+        """Coverage-only recovery preserves every prior candidate and human decision."""
+        class FailedCoverageTeam(DeterministicAgentTeam):
+            """Return an isolated coverage failure after normal extraction."""
+
+            async def review_coverage(self, *_args):
+                """Simulate a temporary coverage outage."""
+                raise ModelUnavailable("coverage unavailable")
+
+        with patch("app.services.contract_workflow.create_agent_team", FailedCoverageTeam):
+            workspace = self.transition(self.selected_workspace(), "extract")
+        before = workspace["fields"]
+
+        class OnlyCoverageTeam(DeterministicAgentTeam):
+            """Reject any unexpected extraction on a coverage-only retry."""
+
+            async def extract(self, *_args):
+                """Fail if previous candidates would be discarded and re-extracted."""
+                raise AssertionError("must reuse candidates")
+
+        with patch("app.services.contract_workflow.create_agent_team", OnlyCoverageTeam):
+            retried = self.transition(workspace, "extract", {"retry_failed": True})
+        self.assertEqual(retried["coverage_status"], "completed")
+        self.assertEqual(retried["fields"], before)
+
     def test_typed_date_errors_are_flagged_and_cannot_be_confirmed(self):
         """Verify typed date errors are flagged and cannot be confirmed."""
         document = Document()
@@ -381,7 +453,7 @@ class ContractWorkflowTests(TestCase):
             f"/api/v1/workspaces/{workspace['id']}/preview", headers=self.headers
         ).json()
         self.assertIn("8000元", preview["text"])
-        self.assertIn("{签字}", preview["text"])
+        self.assertIn("签字：________", preview["text"])
         self.transition(workspace, "generate", {"preview_acknowledged": False}, expected=400)
         workspace = self.transition(workspace, "generate", {"preview_acknowledged": True})
         artifact = workspace["artifacts"][0]
@@ -724,6 +796,39 @@ class ContractWorkflowTests(TestCase):
         )
         confirmed = next(field for field in workspace["fields"] if field["name"] == "字段0")
         self.assertEqual((confirmed["status"], confirmed["value"]), ("confirmed", "人工值"))
+
+    def test_review_failure_persists_candidates_and_retries_without_reextracting(self):
+        """Review-only retry uses persisted candidates and preserves confirmed manual edits."""
+        class ReviewFailureTeam(DeterministicAgentTeam):
+            """Simulate successful extraction followed by a truncated independent review."""
+            fail_review = True
+            extraction_count = 0
+
+            async def extract(self, lines, fields):
+                """Count fresh extraction calls across separate HTTP operations."""
+                type(self).extraction_count += 1
+                return await super().extract(lines, fields)
+
+            async def review_fields(self, *args):
+                """Recover only after the simulated provider limit is removed."""
+                if type(self).fail_review:
+                    raise ModelUnavailable("模拟复核输出截断", code="output_truncated")
+                return await super().review_fields(*args)
+
+        with patch("app.services.contract_workflow.create_agent_team", ReviewFailureTeam):
+            workspace = self.transition(self.selected_workspace(), "extract")
+            amount = next(field for field in workspace["fields"] if field["name"] == "金额")
+            self.assertEqual(amount["value"], "9000元")
+            self.assertEqual(amount["status"], "unverified")
+            self.assertTrue(all(failure["phase"] == "review" for failure in workspace["extraction_failures"]))
+            workspace = self.transition(workspace, "fields", {"decisions": [
+                {"name": "甲方名称", "value": "人工确认的公司", "action": "confirm"}]}, method="patch")
+            ReviewFailureTeam.fail_review = False
+            workspace = self.transition(workspace, "extract", {"retry_failed": True})
+        self.assertEqual(ReviewFailureTeam.extraction_count, 1)
+        self.assertEqual(workspace["extraction_failures"], [])
+        confirmed = next(field for field in workspace["fields"] if field["name"] == "甲方名称")
+        self.assertEqual((confirmed["value"], confirmed["status"]), ("人工确认的公司", "confirmed"))
 
     def test_manual_review_and_generation_work_without_model_configuration(self):
         """Verify manual review and generation work without model configuration."""

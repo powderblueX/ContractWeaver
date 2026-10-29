@@ -21,7 +21,7 @@ class ContractCoverageAgent:
         self.model = model
         self.max_context_chars = max_context_chars
 
-    async def review(self, source_lines, template_fields, extracted_fields):
+    async def review(self, source_lines, template_fields, extracted_fields, focus_line_numbers=None):
         """对照完整纪要和所有候选上下文检查遗漏；超出上下文预算时不发送请求。
 
         Args:
@@ -30,10 +30,13 @@ class ContractCoverageAgent:
             extracted_fields: 已提出但尚未代表人工确认的字段候选。
         """
         values = {field.name: field.value for field in extracted_fields}
+        mapping = {f"c{index:03d}": field["name"] for index, field in enumerate(template_fields, 1)}
+        reverse = {name: key for key, name in mapping.items()}
         payload = {
             "source_lines": source_lines,
             "contract_fields": [
                 {
+                    "name": reverse[field["name"]],
                     "label": field.get("display_name", field["name"]),
                     "context": re.sub(r"\{[^{}]+\}", "[填写处]", field["context"]),
                     "value": values.get(field["name"], ""),
@@ -41,12 +44,19 @@ class ContractCoverageAgent:
                 for field in template_fields
             ],
         }
+        if focus_line_numbers is not None:
+            payload["focus_line_numbers"] = focus_line_numbers
         if len(json.dumps(payload, ensure_ascii=False)) > self.max_context_chars:
             raise ModelUnavailable(
                 "全合同覆盖检查超过配置的上下文上限，未发送请求；请人工核对，或调整 LAW_COVERAGE_MAX_CONTEXT_CHARS 后重新提取"
             )
-        return await self.model.generate_structured(
+        result = await self.model.generate_structured(
             CONTRACT_COVERAGE_PROMPT,
             payload,
             CoverageResult,
         )
+        for gap in result.gaps:
+            if any(name not in mapping for name in gap.target_fields):
+                raise ModelUnavailable("覆盖检查返回未知填写位置，未执行修正", code="model_schema")
+            gap.target_fields = list(dict.fromkeys(mapping[name] for name in gap.target_fields))
+        return result

@@ -239,7 +239,9 @@ class HarnessTests(IsolatedAsyncioTestCase):
         runtime.finish("completed", "stale worker must not replace expired record")
         records = AgentRunRepository(self.database).list("workspace", 1)
         self.assertEqual(len(records), 2)
-        self.assertEqual(records[1]["status"], "interrupted")
+        by_id = {item["run_id"]: item for item in records}
+        self.assertEqual(by_id[runtime.snapshot["run_id"]]["status"], "interrupted")
+        self.assertEqual(by_id[replacement.snapshot["run_id"]]["status"], "completed")
 
     async def test_history_is_bounded_and_deleted_with_workspace(self):
         """Verify history is bounded and deleted with workspace."""

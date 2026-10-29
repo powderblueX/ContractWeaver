@@ -163,6 +163,20 @@ class ChatModelTests(IsolatedAsyncioTestCase):
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             await ChatModel(settings, client).complete([])
 
+    async def test_reasoning_only_truncation_does_not_invite_batch_retries(self):
+        """Reasoning without answer text must not be logged, parsed or blindly repeated."""
+        def respond(_request):
+            """Return a synthetic reasoning-only provider cutoff."""
+            return httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {
+                "content": "", "reasoning_content": "private reasoning fixture"}}]})
+        settings = Settings(_env_file=None, llm_api_key="fake", llm_base_url="https://example.org", llm_model="fixture")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            with self.assertRaises(ModelUnavailable) as raised:
+                await ChatModel(settings, client).complete([])
+        self.assertFalse(raised.exception.allow_batch_split)
+        self.assertNotIn("private reasoning", str(raised.exception))
+        self.assertIn("尚未返回正文", str(raised.exception))
+
     async def test_truncated_output_fails_without_repeating_paid_requests(self):
         """Verify truncated output fails without repeating paid requests."""
         calls = []

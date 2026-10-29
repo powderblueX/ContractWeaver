@@ -3,7 +3,7 @@
 import re
 from typing import Literal
 
-from pydantic import create_model
+from pydantic import Field, create_model, field_validator
 
 from app.model_client import ModelUnavailable
 
@@ -39,7 +39,20 @@ def batch_schema(base, item_base, collection_name, mapping):
     item = create_model(
         "BatchField", __base__=item_base, field_name=(Literal.__getitem__(tuple(mapping)), ...)
     )
-    return create_model("Batch" + base.__name__, __base__=base, **{collection_name: (list[item], ...)})
+    validators = {}
+    constraint = ...
+    if collection_name == "fields":
+        constraint = Field(..., min_length=len(mapping), max_length=len(mapping))
+
+        def unique_fields(cls, values):
+            """Reject duplicate IDs during structured validation so bounded repair can run."""
+            if len({value.field_name for value in values}) != len(values):
+                raise ValueError("Each requested field ID must appear exactly once")
+            return values
+
+        validators["unique_fields"] = field_validator(collection_name)(unique_fields)
+    return create_model("Batch" + base.__name__, __base__=base, __validators__=validators,
+                        **{collection_name: (list[item], constraint)})
 
 
 def restore_names(items, mapping, allow_duplicates=False):

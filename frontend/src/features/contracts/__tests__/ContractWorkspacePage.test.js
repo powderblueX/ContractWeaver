@@ -44,6 +44,36 @@ const clickButton = async (wrapper, label) => {
 }
 
 describe('record-to-contract user flow', () => {
+  it('opens a saved blank draft directly in preview without duplicate navigation', async () => {
+    const task = {
+      id: 'blank-draft', title: '待完善草稿', source_name: '纪要', source_text: '双方尚未确定内容。',
+      revision: 2, stage: 'ready_to_generate', analysis: null, recommendations: [],
+      selected_template: { id: 'blank', name: '合同模板' }, artifacts: [], events: [],
+      fields: ['甲方', '金额'].map((name) => ({ name, value: '', status: 'omitted',
+        extracted_value: '', user_note: '暂未确定', alternatives: [], evidence: [], review_issues: [], context: '' })),
+    }
+    contractApi.health.mockResolvedValue({ model_configured: false })
+    contractApi.list.mockResolvedValue([task])
+    contractApi.get.mockResolvedValue(task)
+    contractApi.preview.mockResolvedValue({ revision: 2, text: '甲方：________', omitted_fields: ['甲方', '金额'] })
+    contractApi.browseTemplates.mockResolvedValue({ items: [], total: 0 })
+    const wrapper = mount(ContractWorkspacePage)
+    await flushPromises()
+    await wrapper.find('.task-row button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.workflow-tabs .active').text()).toContain('预览')
+    expect(wrapper.find('.contract-paper').text()).toContain('甲方')
+    expect(wrapper.find('.generate-button').text()).toContain('草稿')
+    expect(wrapper.find('.next-step-card').exists()).toBe(false)
+    expect(wrapper.find('.review-stat-strip').exists()).toBe(false)
+    expect(wrapper.find('.review-shortcuts').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('进入内容审核')
+    await clickButton(wrapper, '3 · 内容审核')
+    await clickButton(wrapper, '4 · 预览与导出')
+    expect(contractApi.preview).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('opens the manual template library after recommendation fails and offers explicit recovery', async () => {
     const task = {
       id: 'manual-fallback',
@@ -194,7 +224,9 @@ describe('record-to-contract user flow', () => {
       action: 'confirm',
     })
     await clickButton(wrapper, '4 · 预览与导出')
-    await clickButton(wrapper, '载入预览')
+    expect(contractApi.preview).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.next-step-card').exists()).toBe(false)
+    expect(wrapper.find('.review-stat-strip').exists()).toBe(false)
     await wrapper.find('.preview-panel input[type=checkbox]').setValue(true)
     await clickButton(wrapper, '生成 DOCX 合同')
     expect(contractApi.generate).toHaveBeenCalledWith(reviewed, false)

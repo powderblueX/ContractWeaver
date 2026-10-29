@@ -530,19 +530,6 @@ button:disabled {
   padding: 5px 8px;
   font-size: 12px;
 }
-.review-progress {
-  height: 6px;
-  background: #e5eddf;
-  border-radius: 8px;
-  overflow: hidden;
-  margin: 20px 0 12px;
-}
-.review-progress span {
-  display: block;
-  height: 100%;
-  background: #448b60;
-  transition: width 0.25s;
-}
 .empty-state {
   padding: 35px 20px;
   color: #84927d;

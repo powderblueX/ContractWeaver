@@ -1,9 +1,5 @@
 /* @file 工作区引导、运行轨迹与审核布局；不改变原始 Word 的版面规则。 */
 /* 分组间用 margin，组内用 gap，避免给所有按钮加外边距而破坏工具栏对齐。 */
-.review-toolbar > .review-shortcuts {
-  margin-block: var(--cw-section-gap);
-  justify-content: flex-start;
-}
 .review-toolbar > .inline-actions:last-child {
   margin-top: var(--cw-section-gap);
 }
@@ -38,27 +34,6 @@
   flex-wrap: wrap;
   row-gap: var(--cw-control-gap);
 }
-.review-stat-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 18px 0;
-}
-.review-stat-strip span {
-  flex: 1;
-  min-width: 150px;
-  padding: 14px;
-  background: #f3f6f1;
-  border-radius: 10px;
-  color: #526961;
-}
-.review-stat-strip strong {
-  display: block;
-  font-size: 24px;
-  color: #244f40;
-  margin-bottom: 5px;
-}
-.next-step-card,
 .operation-card {
   margin: 18px 32px;
   padding: 20px 24px;
@@ -66,23 +41,10 @@
   border: 1px solid #c7d9d2;
   background: #edf6f1;
 }
-.next-step-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-.next-step-card h2 {
-  margin: 6px 0;
-  font-size: 20px;
-}
-.next-step-card p,
+
 .guide-copy {
   color: #526961;
   line-height: 1.8;
-}
-.next-step-card button {
-  flex-shrink: 0;
 }
 .operation-card {
   background: #f3f6fc;
@@ -230,12 +192,7 @@
   margin: 18px 0;
 }
 @media (max-width: 800px) {
-  .next-step-card {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .next-step-card,
-  .operation-card {
+    .operation-card {
     margin: 12px 16px;
   }
   .recovery-notice {

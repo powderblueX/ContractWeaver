@@ -14,7 +14,8 @@ const blankReason = ref('此处为未使用的模板空白，保留原样，签�
 const unknownReason = ref('首轮纪要未提供或尚未确定，本次草稿暂留空，签署前补充并核对')
 const pageIndex = ref(0)
 const pageSize = 20
-let savingNames = new Set()
+const saveNotice = ref('')
+const savingNames = ref(new Set())
 // 仅清理本次成功保存的字段，保留同页其他尚未提交的修改。
 const statusLabels = {
   extracted: '待核对',
@@ -29,6 +30,10 @@ watch(
   () => props.fields,
   (fields, previousFields = []) => {
     const previousByName = Object.fromEntries(previousFields.map((field) => [field.name, field]))
+    const saved = fields.filter((field) => savingNames.value.has(field.name) &&
+      ['confirmed', 'omitted'].includes(field.status) &&
+      (field.status === 'omitted' ? drafts.value[field.name]?.action === 'omit' : field.value === drafts.value[field.name]?.value))
+    if (saved.length) saveNotice.value = `已保存 ${saved.length} 项审核决定（${saved.filter((field) => field.status === 'omitted').length} 项保留空白）。`
     drafts.value = Object.fromEntries(
       fields.map((field) => {
         const previous = previousByName[field.name]
@@ -40,7 +45,7 @@ watch(
             local.note !== (previous.user_note || '') ||
             local.action !== (previous.status === 'omitted' ? 'omit' : 'confirm'))
         const draft =
-          localChanged && !savingNames.has(field.name)
+          localChanged && !savingNames.value.has(field.name)
             ? local
             : {
                 value: field.value,
@@ -50,14 +55,14 @@ watch(
         return [field.name, draft]
       })
     )
-    savingNames = new Set()
+    savingNames.value = new Set()
   },
   { immediate: true }
 )
 watch(
   () => props.busy,
   (busy) => {
-    if (!busy) savingNames = new Set()
+    if (!busy) savingNames.value = new Set()
   }
 )
 
@@ -78,6 +83,8 @@ const changedFields = computed(() =>
   })
 )
 watch(changedFields, (fields) => emit('dirty', fields.length > 0), { immediate: true })
+/** Already saved decisions need no duplicate submission; editing re-enables the action. */
+const isSaved = (field) => isReviewed(field) && !changedFields.value.some((item) => item.name === field.name)
 const remaining = computed(() => props.fields.filter((field) => !isReviewed(field)).length)
 // Apply to the whole contract, never just the visible page; preserve local edits.
 const unknownFields = computed(() => {
@@ -136,7 +143,9 @@ function decisionsFor(fields) {
  * @param {Array<Object>} fields 本次参与决定的字段集合。
  */
 function saveDecisions(fields) {
-  savingNames = new Set(fields.map((field) => field.name))
+  if (props.busy || !fields.length) return
+  saveNotice.value = ''
+  savingNames.value = new Set(fields.map((field) => field.name))
   emit('save', decisionsFor(fields))
 }
 
@@ -178,7 +187,7 @@ function ignoreUnknownFields() {
     drafts.value[field.name].note = reason
   })
   saveDecisions(fields)
-  selectedBlanks.value = selectedBlanks.value.filter((name) => !savingNames.has(name))
+  selectedBlanks.value = selectedBlanks.value.filter((name) => !savingNames.value.has(name))
 }
 /**
  * 仅勾选本页未审核且无值的表格或排版候选，不提交留空决定。
@@ -225,36 +234,16 @@ function omitSelected() {
         </div>
         <span class="muted">修改值将保留提取原值和原文依据</span>
       </div>
-      <p class="guide-copy">
-        先核对已有提取值。纪要不完整也可以继续：暂无信息的空白可一键暂留空，之后再补充；有内容的分歧仍需核对，不会自动清除。
-      </p>
-      <p class="small-note">
-        批量确认只包含无复核警告的已填写项。有分歧或依据问题的字段请逐项修正和确认；年月日分格只填数字，选择项只填一个选项。
-      </p>
-      <div class="ignore-unknown-tools">
-        <strong>第一轮信息不全？不必逐项点击。</strong>
-        <p class="small-note">
-          对整个合同生效，不受当前筛选或分页影响。保留已有值、已审核项与未保存修改；统一记录留空原因。至少确认一项有效填写值后，才可导出草稿。
-        </p>
-        <label>
-          统一暂留空原因
-          <input v-model="unknownReason" :disabled="busy" maxlength="2000" />
-        </label>
-        <button
-          class="secondary"
-          :disabled="busy || !unknownFields.length || !unknownReason.trim()"
-          @click="ignoreUnknownFields"
-        >
-          一键忽略未确定空白（{{ unknownFields.length }} 项）
+      <p v-if="saveNotice" role="status" aria-live="polite" class="review-save-notice">{{ saveNotice }}</p>
+      <p class="guide-copy">确认填写值，或明确留空后导出待完善草稿；有分歧的内容请逐项核对。</p>
+      <div v-if="unknownFields.length" class="ignore-unknown-tools">
+        <button class="secondary" :disabled="busy || !unknownReason.trim()" @click="ignoreUnknownFields">
+          未确定空白暂留空（{{ unknownFields.length }} 项）
         </button>
-        <p class="small-note">
-          这是暂缓填写，不是删除条款或认定合同完整。以后取消对应项的“保留空白”，即可填写并重新确认。
-        </p>
-      </div>
-      <div class="inline-actions review-shortcuts">
-        <button class="secondary" :disabled="busy" @click="filter = 'filled'">先核对已提取</button>
-        <button class="secondary" :disabled="busy" @click="filter = 'issues'">再处理缺失与分歧</button>
-        <button class="secondary" :disabled="busy" @click="filter = 'table'">检查表格明细</button>
+        <details>
+          <summary>留空原因（适用于整个合同的未确定空白）</summary>
+          <label>留空原因<input v-model="unknownReason" :disabled="busy" maxlength="2000" /></label>
+        </details>
       </div>
       <div class="library-filters">
         <input v-model="search" aria-label="查找字段" placeholder="查找字段名称" />
@@ -401,14 +390,14 @@ function omitSelected() {
         <button
           class="primary"
           :disabled="
-            busy ||
+            busy || isSaved(field) ||
             (drafts[field.name].action === 'omit'
               ? !drafts[field.name].note.trim()
               : !drafts[field.name].value.trim())
           "
           @click="saveDecisions([field])"
         >
-          {{ drafts[field.name].action === 'omit' ? '确认保留空白' : '保存并确认' }}
+          {{ busy && savingNames.has(field.name) ? '正在保存…' : isSaved(field) ? (field.status === 'omitted' ? '已保存 · 保留空白' : '已保存 · 已确认') : drafts[field.name].action === 'omit' ? '确认保留空白' : '保存并确认' }}
         </button>
       </div>
     </article>

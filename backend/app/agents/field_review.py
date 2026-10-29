@@ -29,7 +29,9 @@ class FieldReviewAgent:
         """
         mapping, fields = model_fields(template_fields)
         reverse = {value: key for key, value in mapping.items()}
-        extracted = [{**field, "name": reverse[field["name"]]} for field in extracted_fields]
+        extracted = [{"name": reverse[field["name"]], **{key: field[key] for key in
+                      ("value", "status", "evidence", "note", "alternatives", "review_issues") if key in field}}
+                     for field in extracted_fields]
         result = await self.model.generate_structured(
             FIELD_REVIEW_PROMPT,
             {

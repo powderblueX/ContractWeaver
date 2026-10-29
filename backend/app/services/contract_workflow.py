@@ -4,8 +4,9 @@ import asyncio
 import uuid
 from hashlib import sha256
 
+from app.agents.coverage_recovery import review_coverage
+from app.agents.coverage_repair import repair_coverage
 from app.agents.field_coordinator import FieldCoordinationResult, FieldCoordinator
-from app.agents.harness import run_step
 from app.agents.negotiation_coordinator import NegotiationCoordinator
 from app.agents.team import create_agent_team
 from app.config import Settings
@@ -196,6 +197,10 @@ class ContractWorkflowService:
                     "fixed_unit",
                 ):
                     setattr(field, key, metadata.get(field.name, {}).get(key, getattr(field, key)))
+        if workspace.stage == "field_review" and workspace.fields and all(
+            field.status in (FieldStatus.CONFIRMED, FieldStatus.OMITTED) for field in workspace.fields
+        ):
+            workspace.stage = "ready_to_generate"
         return workspace
 
     def select_template(
@@ -266,7 +271,10 @@ class ContractWorkflowService:
         source_lines = number_source_lines(workspace.source_text)
         source_by_line = {line["line_number"]: line["text"] for line in source_lines}
         target_fields = details["fields"]
+        review_only_names = set()
         if retry_failed:
+            review_only_names = {name for failure in workspace.extraction_failures
+                                 if failure.get("phase") == "review" for name in failure["field_names"]}
             failed_names = {
                 name for failure in workspace.extraction_failures for name in failure["field_names"]
             }
@@ -278,7 +286,7 @@ class ContractWorkflowService:
             target_fields = [
                 field for field in target_fields if field["name"] in failed_names - reviewed_names
             ]
-            if not target_fields:
+            if not target_fields and workspace.coverage_status not in ("failed", "unverified", "skipped"):
                 raise InvalidContractInput("没有待重试的失败字段，或这些字段已被人工审核")
         batches = [
             target_fields[start : start + self.settings.fields_per_batch]
@@ -304,7 +312,10 @@ class ContractWorkflowService:
                 """
                 async with semaphore:
                     return await FieldCoordinator(team, self.settings).run(
-                        source_lines, template_fields, index
+                        source_lines, template_fields, index,
+                        previous_fields=[item for item in workspace.fields
+                                         if item.name in review_only_names and
+                                         any(spec["name"] == item.name for spec in template_fields)],
                     )
 
             async def monitored_batch(index, batch):
@@ -334,8 +345,11 @@ class ContractWorkflowService:
         workspace.agent_questions = []
         workspace.coordination_warnings = []
         repair_count = 0
+        failed_batch_count = 0
+        reviewed_this_run = set()
         for index, (batch, result) in enumerate(zip(batches, extracted_batches)):
             if isinstance(result, Exception):
+                failed_batch_count += 1
                 operations.batch(index, "failed", str(result)[:300])
                 if not isinstance(result, (ModelUnavailable, ValueError)):
                     raise result
@@ -347,7 +361,13 @@ class ContractWorkflowService:
                     }
                 )
             else:
-                by_name.update({field.name: field for field in result.fields})
+                workspace.extraction_failures.extend(result.failures)
+                failed_batch_count += bool(result.failures)
+                failed_extract_names = {name for failure in result.failures if failure["phase"] == "extract"
+                                        for name in failure["field_names"]}
+                failed_names = {name for failure in result.failures for name in failure["field_names"]}
+                by_name.update({field.name: field for field in result.fields if field.name not in failed_extract_names})
+                reviewed_this_run.update(field.name for field in result.fields if field.name not in failed_names)
                 workspace.agent_questions.extend(result.questions)
                 workspace.coordination_warnings.extend(result.warnings)
                 repair_count += result.repairs
@@ -364,7 +384,7 @@ class ContractWorkflowService:
         workspace.coverage_gaps = []
         workspace.coverage_error = {}
         try:
-            if len(workspace.extraction_failures) == len(batches):
+            if not reviewed_this_run and not (retry_failed and not target_fields):
                 raise ModelUnavailable(
                     "本次所有字段批次均未完成，已跳过全合同覆盖检查",
                     code="coverage_skipped",
@@ -372,10 +392,18 @@ class ContractWorkflowService:
                     retryable=False,
                 )
             async with create_agent_team(self.settings) as team:
-                coverage = await run_step(
-                    "review_coverage",
-                    lambda: team.coverage.review(source_lines, details["fields"], workspace.fields),
-                )
+                coverage = await review_coverage(team.coverage, source_lines, details["fields"], workspace.fields)
+                workspace.coverage_gaps = [gap for gap in coverage.gaps
+                    if gap.evidence.quote in source_by_line.get(gap.evidence.line_number, "")]
+                repaired, warnings = await repair_coverage(
+                    team, source_lines, details["fields"], workspace.fields, coverage.gaps,
+                    limit=min(5, self.settings.fields_per_batch))
+                workspace.coordination_warnings.extend(warnings)
+                if repaired:
+                    # One repair round only; a fresh full comparison checks for regressions.
+                    workspace.coverage_gaps = [gap for gap in coverage.gaps
+                        if gap.evidence.quote in source_by_line.get(gap.evidence.line_number, "")]
+                    coverage = await review_coverage(team.coverage, source_lines, details["fields"], workspace.fields)
             valid_gaps = [
                 gap
                 for gap in coverage.gaps
@@ -390,6 +418,8 @@ class ContractWorkflowService:
                 f"全合同覆盖检查发现 {len(valid_gaps)} 个待人工核对事项；不代表内容完整性认证",
             )
         except (ModelUnavailable, ValueError) as error:
+            workspace.coverage_gaps = [gap for gap in getattr(error, "partial_coverage_gaps", workspace.coverage_gaps)
+                                       if gap.evidence.quote in source_by_line.get(gap.evidence.line_number, "")]
             workspace.coverage_status = (
                 "skipped"
                 if isinstance(error, ModelUnavailable) and error.code == "coverage_skipped"
@@ -412,7 +442,7 @@ class ContractWorkflowService:
             workspace,
             "extraction_agent",
             "extract_fields",
-            f"本次处理 {len(target_fields)} 个字段、{len(batches)} 批；{len(workspace.extraction_failures)} 批失败，可单独重试或人工填写",
+            f"本次处理 {len(target_fields)} 个字段、{len(batches)} 批；{failed_batch_count} 批未完整完成，可单独重试或人工填写",
         )
         issue_count = sum(
             bool(field.review_issues) or field.status in (FieldStatus.CONFLICT, FieldStatus.UNVERIFIED)
@@ -422,7 +452,7 @@ class ContractWorkflowService:
             workspace,
             "review_agent",
             "review_evidence",
-            f"{len(batches) - len(workspace.extraction_failures)} 批完成独立复核，{issue_count} 项有分歧或依据问题；另有 {sum(field.status == FieldStatus.MISSING for field in workspace.fields)} 处未取得填写值（含未用表格或排版候选），需用户补充或判断留空",
+            f"{len(batches) - failed_batch_count} 批完成独立复核，{issue_count} 项有分歧或依据问题；另有 {sum(field.status == FieldStatus.MISSING for field in workspace.fields)} 处未取得填写值（含未用表格或排版候选），需用户补充或判断留空",
         )
         finish_run(workspace)
         return self.repository.save(workspace, user_id, revision)
@@ -479,7 +509,7 @@ class ContractWorkflowService:
         )
         workspace.stage = (
             "ready_to_generate"
-            if reviewed and any(field.status == FieldStatus.CONFIRMED for field in workspace.fields)
+            if reviewed
             else "field_review"
         )
         self._event(workspace, "user", "review_fields", f"保存 {len(decisions)} 个字段的人工审核")
@@ -533,8 +563,12 @@ class ContractWorkflowService:
         details = self._template_details(workspace)
         if details["requires_visual_review"] and not visual_review_acknowledged:
             raise InvalidContractInput("请先人工核对图片、图形或图表区域，并明确确认这些区域无需自动填写")
-        if workspace.fields and all(field.status == FieldStatus.OMITTED for field in workspace.fields):
-            raise InvalidContractInput("所有字段均保留空白，请至少填写并确认一项内容；空白原件可在模板库下载")
+        # Older all-blank reviews were saved under field_review; accept their
+        # explicit decisions without requiring a fake non-empty value or re-review.
+        if workspace.stage == "field_review" and workspace.fields and all(
+            field.status in (FieldStatus.CONFIRMED, FieldStatus.OMITTED) for field in workspace.fields
+        ):
+            workspace.stage = "ready_to_generate"
         if not preview_acknowledged or workspace.stage not in ("ready_to_generate", "generated"):
             raise InvalidContractInput("请先完成所有字段审核并确认合同预览")
         if not workspace.fields or any(

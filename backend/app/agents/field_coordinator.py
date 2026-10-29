@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 from app.agents.candidate_validation import apply_review, repairable, validate_candidates
 from app.agents.field_mapping import model_fields
-from app.agents.harness import run_step
-from app.domain.contract_workflow import ReviewedField
+from app.agents.harness import HarnessLimitExceeded, run_step
+from app.domain.contract_workflow import FieldStatus, ReviewedField
 from app.model_client import ModelUnavailable
 from app.observability import operations
 
@@ -18,6 +18,7 @@ class FieldCoordinationResult:
     questions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     repairs: int = 0
+    failures: list[dict] = field(default_factory=list)
 
 
 class FieldCoordinator:
@@ -33,38 +34,86 @@ class FieldCoordinator:
         self.team = team
         self.settings = settings
 
-    async def _review(self, source_lines, specs, fields):
-        """独立调用复核角色，并将检查意见合并到本轮候选。
+    @staticmethod
+    def _failure(specs, error, phase):
+        """Describe only the failed fields and stage, without provider payloads."""
+        public = error.public_error() if isinstance(error, ModelUnavailable) else {
+            "code": "model_schema", "message": "模型结果未通过校验", "retryable": True,
+            "hint": "可重试未完成部分，或人工核对候选。"}
+        if isinstance(error, HarnessLimitExceeded):
+            public = {"code": "execution_budget", "message": "本次执行预算已用尽，候选已保留",
+                      "retryable": True, "hint": "可仅重试未完成的复核，或人工核对。"}
+        if phase == "review":
+            public = {**public, "message": "独立复核未完成，已保留提取候选。" + public["message"],
+                      "hint": "重试时只复核已保留的候选；也可人工核对。" + public.get("hint", "")}
+        return {"field_names": [spec["name"] for spec in specs], "phase": phase,
+                "message": public["message"], "error": public}
 
-        Args:
-            source_lines: 带服务器行号的原始纪要，是逐字证据的核验来源。
-            specs: 本批候选填写处的类型及定位约束。
-            fields: 本次操作关联的字段集合。
-        """
-        review = await run_step(
-            "review_fields",
-            lambda: self.team.review.review(
-                source_lines, specs, [field.model_dump(mode="json") for field in fields]
-            ),
-        )
-        apply_review(fields, review)
+    async def _extract(self, source_lines, specs, depth=0):
+        """Split truncated batches at most twice; keep successful sibling results."""
+        try:
+            extraction = await run_step(
+                "extract_fields", lambda: self.team.extraction.extract(source_lines, specs))
+            return FieldCoordinationResult(validate_candidates(extraction, specs, source_lines))
+        except HarnessLimitExceeded:
+            raise
+        except (ModelUnavailable, ValueError) as error:
+            if isinstance(error, ModelUnavailable) and error.code == "output_truncated" and getattr(error, "allow_batch_split", True) and len(specs) > 1 and depth < 2:
+                operations.batch(self.batch_index, "extracting", "输出过长，已缩小批次重新提取")
+                middle = len(specs) // 2
+                left = await self._extract(source_lines, specs[:middle], depth + 1)
+                right = await self._extract(source_lines, specs[middle:], depth + 1)
+                return FieldCoordinationResult(left.fields + right.fields, failures=left.failures + right.failures)
+            return FieldCoordinationResult([ReviewedField(**spec) for spec in specs],
+                                           failures=[self._failure(specs, error, "extract")])
 
-    async def run(self, source_lines, specs, batch_index):
-        """先完成提取与复核，再由主控选择修正或交人工；修正失败保留已复核候选。
+    async def _review(self, source_lines, specs, fields, depth=0):
+        """Retry only smaller reviews on truncation; preserve unchecked proposals on failure."""
+        try:
+            review = await run_step("review_fields", lambda: self.team.review.review(
+                source_lines, specs, [item.model_dump(mode="json") for item in fields]))
+            apply_review(fields, review)
+            return []
+        except (ModelUnavailable, ValueError) as error:
+            if isinstance(error, ModelUnavailable) and error.code == "output_truncated" and getattr(error, "allow_batch_split", True) and len(specs) > 1 and depth < 2:
+                operations.batch(self.batch_index, "reviewing", "输出过长，复用提取候选并分组复核")
+                middle = len(specs) // 2
+                left_names = {spec["name"] for spec in specs[:middle]}
+                left = await self._review(source_lines, specs[:middle],
+                                          [item for item in fields if item.name in left_names], depth + 1)
+                right = await self._review(source_lines, specs[middle:],
+                                           [item for item in fields if item.name not in left_names], depth + 1)
+                return left + right
+            for item in fields:
+                item.review_issues.append("独立复核未完成：候选已保留，请重试复核或人工确认")
+                if item.status == FieldStatus.EXTRACTED:
+                    item.status = FieldStatus.UNVERIFIED
+            return [self._failure(specs, error, "review")]
 
-        Args:
-            source_lines: 带服务器行号的原始纪要，是逐字证据的核验来源。
-            specs: 本批候选填写处的类型及定位约束。
-            batch_index: 从零开始的内部批次索引。
-        """
-        operations.batch(batch_index, "extracting", "正在从记录提取填写内容")
-        extraction = await run_step(
-            "extract_fields", lambda: self.team.extraction.extract(source_lines, specs)
-        )
-        fields = validate_candidates(extraction, specs, source_lines)
-        operations.batch(batch_index, "reviewing", "正在独立复核依据与分歧")
-        await self._review(source_lines, specs, fields)
-        result = FieldCoordinationResult(fields)
+    async def run(self, source_lines, specs, batch_index, previous_fields=None):
+        """Retain proposals across review failures; cached review retries never re-extract them."""
+        self.batch_index = batch_index
+        operations.batch(batch_index, "extracting", "正在处理字段候选与复核")
+        cached = {item.name: item.model_copy(deep=True) for item in previous_fields or []}
+        for item in cached.values():
+            item.review_issues = [issue for issue in item.review_issues if not issue.startswith("独立复核未完成：")]
+            if item.status == FieldStatus.UNVERIFIED and item.value and item.evidence and not item.review_issues:
+                item.status = FieldStatus.EXTRACTED
+        fresh_specs = [spec for spec in specs if spec["name"] not in cached]
+        result = await self._extract(source_lines, fresh_specs) if fresh_specs else FieldCoordinationResult([])
+        by_name = {item.name: item for item in result.fields}
+        by_name.update(cached)
+        result.fields = [by_name[spec["name"]] for spec in specs]
+        failed_names = {name for failure in result.failures for name in failure["field_names"]}
+        review_specs = [spec for spec in specs if spec["name"] not in failed_names]
+        fields = [item for item in result.fields if item.name not in failed_names]
+        if review_specs:
+            operations.batch(batch_index, "reviewing", "正在独立复核依据与分歧")
+            result.failures.extend(await self._review(source_lines, review_specs, fields))
+        if result.failures:
+            retained = sum(bool(item.value) for item in result.fields)
+            operations.batch(batch_index, "failed", f"部分提取或复核未完成；已保留 {retained} 个有值候选，仍待人工核对")
+            return result
         # Each iteration ends in a model decision, a tool observation, or human handoff.
         for _ in range(self.settings.supervisor_max_repairs + 1):
             eligible = [item for item in result.fields if repairable(item)]
@@ -115,7 +164,8 @@ class FieldCoordinator:
                 )
                 proposed = validate_candidates(repaired, target_specs, source_lines, require_complete=True)
                 operations.batch(batch_index, "reviewing", "修正后再次独立复核")
-                await self._review(source_lines, target_specs, proposed)
+                if await self._review(source_lines, target_specs, proposed):
+                    raise ModelUnavailable("修正后的复核未完成，已保留之前完成复核的候选")
                 # Merge only after both repair and a fresh review complete successfully.
                 by_name = {item.name: item for item in proposed}
                 for item in proposed:

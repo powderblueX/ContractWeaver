@@ -245,6 +245,14 @@ class ContractTemplateCatalog:
             ).hexdigest(),
         }
 
+    @staticmethod
+    def _omitted_values(compilation, omitted_fields):
+        """Restore real blank formatting; render legacy named placeholders as empty lines."""
+        return {
+            name: re.sub(r"\{[^{}]+\}", "________", compilation.original_blanks.get(name, "________"))
+            for name in omitted_fields or []
+        }
+
     def preview_contract(
         self, template_id: str, values: dict[str, str], omitted_fields: list[str] | None = None
     ) -> dict:
@@ -259,11 +267,7 @@ class ContractTemplateCatalog:
         document, compilation = self._compiled_document(template)
         paragraph_objects = tuple(iter_visible_document_paragraphs(document))
         paragraphs = tuple(paragraph_text(paragraph) for paragraph in paragraph_objects)
-        replacements = {
-            name: compilation.original_blanks[name]
-            for name in omitted_fields or []
-            if name in compilation.original_blanks
-        }
+        replacements = self._omitted_values(compilation, omitted_fields)
         replacements.update(values)
         validate_slot_values(self.describe_template(template_id)["fields"], values)
         rendered = [
@@ -487,16 +491,13 @@ class ContractTemplateCatalog:
             for key, value in values.items()
             if key in allowed and value is not None and str(value).strip()
         }
-        if not clean:
-            raise InvalidContractInput("未提取到可填写的合同字段，请补充当事人、金额等具体信息")
+        reviewed_blanks = set(omitted_fields or []) & allowed
+        if not clean and (not allowed or reviewed_blanks != allowed):
+            raise InvalidContractInput("请填写内容，或为所有填写位置明确保存留空决定后再导出")
         validate_slot_values(details["fields"], clean)
         document, compilation = self._compiled_document(template)
         visual_before = visual_fingerprint(document)
-        replacements = {
-            name: compilation.original_blanks[name]
-            for name in omitted_fields or []
-            if name in compilation.original_blanks
-        }
+        replacements = self._omitted_values(compilation, omitted_fields)
         replacements.update(clean)
         filled = set()
         for paragraph in iter_document_paragraphs(document):
@@ -513,7 +514,7 @@ class ContractTemplateCatalog:
         if set(replacements) - filled:
             raise InvalidContractInput("部分已审核的填写或留空位置未能写入，已停止生成")
         filled &= set(clean)
-        if not filled:
+        if clean and not filled:
             raise InvalidContractInput("模板中未找到对应填写位置，无法生成合同")
         if set(clean) - filled:
             raise InvalidContractInput(
@@ -528,6 +529,7 @@ class ContractTemplateCatalog:
             "id": contract_id,
             "template": template.public(),
             "filled_fields": sorted(filled),
+            "is_draft": bool(allowed - filled),
             "missing_fields": sorted(allowed - filled),
             "filename": filename,
         }

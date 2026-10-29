@@ -36,7 +36,7 @@ const highlightedLine = ref(null)
 const tabs = [
   { id: 'record', title: '1 · 协商记录' },
   { id: 'templates', title: '2 · 选择模板' },
-  { id: 'review', title: '3 · 字段审查' },
+  { id: 'review', title: '3 · 内容审核' },
   { id: 'preview', title: '4 · 预览与导出' },
 ]
 const stageLabels = {
@@ -57,18 +57,7 @@ const roleLabels = {
   supervisor_agent: '主控协调 Agent',
   renderer: '合同生成',
 }
-const reviewedCount = computed(
-  () => workspace.value?.fields.filter((field) => ['confirmed', 'omitted'].includes(field.status)).length || 0
-)
 const sourceLines = computed(() => workspace.value?.source_text.split('\n') || [])
-const fieldCounts = computed(() => ({
-  filled:
-    workspace.value?.fields.filter((field) => field.value && !['confirmed', 'omitted'].includes(field.status))
-      .length || 0,
-  missing: workspace.value?.fields.filter((field) => field.status === 'missing').length || 0,
-  conflict:
-    workspace.value?.fields.filter((field) => ['conflict', 'unverified'].includes(field.status)).length || 0,
-}))
 const busy = computed(() => Boolean(busyAction.value) || activity.value?.status === 'running')
 const recovery = computed(() => {
   if (error.value) return errorInfo.value || failureGuidance({ message: error.value })
@@ -88,69 +77,20 @@ const retryLabel = computed(() => {
     )
   )
     return '重试失败批次'
+  if (['failed', 'unverified', 'skipped'].includes(workspace.value?.coverage_status)) return '重试覆盖检查'
   if (workspace.value?.extraction_failures?.length) return ''
   if (failedAction.value?.includes('分析')) return '重新分析并推荐'
   if (failedAction.value?.includes('提取')) return '重新提取'
   return ''
 })
-const nextStep = computed(() => {
-  const stage = workspace.value?.stage
-  if (workspace.value?.selected_template?.requires_reselection)
-    return {
-      title: '填写规则已更新，请重新载入模板',
-      detail:
-        '旧字段存在重复、日期或选项映射风险，不能继续导出。重新载入会重置字段审核；原始纪要和历史文件保留，旧文件不会自动修复。',
-      button: '重新载入当前模板并开始审核',
-      action: 'reload-template',
-    }
-  if (stage === 'source_ready')
-    return {
-      title: '下一步：分析这份记录',
-      detail: '让模型识别交易、最终约定与待确认事项，再推荐模板。也可手动选择模板。',
-      button: '分析记录并推荐模板',
-      action: 'analyze',
-    }
-  if (stage === 'template_selection')
-    return {
-      title: '下一步：由你选定合同模板',
-      detail: '推荐只是候选。先查看原件，确认类型与版本，再选择；不合适可搜索完整模板库。',
-      button: '查看候选与模板库',
-      action: 'templates',
-    }
-  if (stage === 'template_selected')
-    return {
-      title: '下一步：从记录提取填写内容',
-      detail: '你刚选择了模板，还没有提取。点击后可看到模型请求与每批进展。',
-      button: '按模板提取并复核字段',
-      action: 'extract',
-    }
-  if (stage === 'field_review')
-    return {
-      title:
-        reviewedCount.value === workspace.value?.fields.length &&
-        !workspace.value.fields.some((field) => field.status === 'confirmed')
-          ? '下一步：至少填写并确认一项内容'
-          : `下一步：审核填写内容（还剩 ${(workspace.value?.fields.length || 0) - reviewedCount.value} 项）`,
-      detail: '核对并确认已有值；纪要不完整时，可一键将未确定空白暂留空，先生成待完善草稿，后续再补充。',
-      button: '进入内容审核',
-      action: 'review',
-    }
-  return {
-    title: '审核已完成，可以检查最终合同',
-    detail: '载入填写后的预览，核对内容和版面说明，再确认生成 DOCX。',
-    button: '查看最终预览',
-    action: 'preview',
+/** Switch steps and load a fresh preview once all explicit review decisions are saved. */
+async function switchTab(tab) {
+  activeTab.value = tab
+  if (tab === 'preview' && !hasUnsavedFields.value && workspace.value?.fields.length &&
+      workspace.value.fields.every((field) => ['confirmed', 'omitted'].includes(field.status)) &&
+      !workspace.value.selected_template?.requires_reselection && preview.value?.revision !== workspace.value.revision) {
+    await workflow.loadPreview()
   }
-})
-/**
- * 根据当前任务状态执行下一项用户明确触发的操作。
- */
-async function continueWorkflow() {
-  if (nextStep.value.action === 'reload-template') return selectTemplate(workspace.value.selected_template)
-  if (nextStep.value.action === 'analyze') return analyzeRecord()
-  if (nextStep.value.action === 'extract') return extractFields(false)
-  activeTab.value = nextStep.value.action
-  if (activeTab.value === 'preview') await workflow.loadPreview()
 }
 
 /**
@@ -178,15 +118,9 @@ async function openWorkspace(id) {
   const result = await workflow.open(id)
   if (result) {
     hasUnsavedFields.value = false
-    activeTab.value = ['ready_to_generate', 'generated'].includes(result.stage)
+    await switchTab(['ready_to_generate', 'generated'].includes(result.stage)
       ? 'preview'
-      : result.fields.length
-        ? 'review'
-        : result.selected_template
-          ? 'review'
-          : result.analysis
-            ? 'templates'
-            : 'record'
+      : result.selected_template ? 'review' : result.analysis ? 'templates' : 'record')
   }
 }
 /**
@@ -212,7 +146,7 @@ async function retryOperation() {
   const latest = await workflow.open(workspace.value.id, true)
   if (!latest || activity.value?.status === 'running') return
   hasUnsavedFields.value = false
-  if (latest.extraction_failures?.length) return extractFields(true)
+  if (latest.extraction_failures?.length || ['failed', 'unverified', 'skipped'].includes(latest.coverage_status)) return extractFields(true)
   if (latest.revision > previousRevision) return
   if (action?.includes('分析') && !latest.selected_template) return analyzeRecord()
   if (action?.includes('提取')) return extractFields(false)
@@ -454,7 +388,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
       </div>
       <template v-else>
         <section
-          v-if="workspace.agent_questions?.length || workspace.coordination_warnings?.length"
+          v-if="activeTab === 'review' && (workspace.agent_questions?.length || workspace.coordination_warnings?.length)"
           class="surface agent-guidance"
           aria-label="主控 Agent 补充问题与运行说明"
         >
@@ -472,22 +406,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             <p class="small-note">问题来自本次提取快照；修改字段后请自行核对，不表示当前仍全部缺失。</p>
           </template>
         </section>
-        <section class="next-step-card" aria-live="polite">
-          <div>
-            <span class="eyebrow">操作指引</span>
-            <h2>{{ nextStep.title }}</h2>
-            <p>{{ nextStep.detail }}</p>
-          </div>
-          <button
-            class="primary"
-            :disabled="
-              busy || (['analyze', 'extract'].includes(nextStep.action) && !systemStatus?.model_configured)
-            "
-            @click="continueWorkflow"
-          >
-            {{ nextStep.button }}
-          </button>
-        </section>
         <nav class="workflow-tabs" aria-label="合同填写步骤">
           <button
             v-for="tab in tabs"
@@ -495,7 +413,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             :class="{ active: activeTab === tab.id }"
             :disabled="busy || (['review', 'preview'].includes(tab.id) && !workspace.selected_template)"
             :aria-current="activeTab === tab.id ? 'step' : undefined"
-            @click="activeTab = tab.id"
+            @click="switchTab(tab.id)"
           >
             {{ tab.title }}
           </button>
@@ -593,9 +511,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                   </button>
                   <button v-else class="primary" @click="activeTab = 'templates'">去选模板</button>
                 </div>
-                <p class="muted">
-                  字段提取 Agent 从原记录查找对应内容，独立复核 Agent 检查分歧与依据。请逐项确认、修正或补充。
-                </p>
+                <div v-if="workspace.selected_template?.requires_reselection" class="review-issue">
+                  <p>模板填写规则已更新，需要重新载入并审核；原始记录和历史文件保留。</p>
+                  <button class="primary" :disabled="busy" @click="selectTemplate(workspace.selected_template)">
+                    重新载入模板
+                  </button>
+                </div>
                 <details v-if="workspace.selected_template?.warnings?.length">
                   <summary>模板识别范围与安全提示</summary>
                   <p
@@ -606,13 +527,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                     {{ warning }}
                   </p>
                 </details>
-                <p v-if="workspace.selected_template" class="small-note">
-                  模板有 {{ workspace.fields.length }} 个字段，完整提取分
-                  {{ Math.ceil(workspace.fields.length / (systemStatus?.fields_per_batch || 30)) }}
-                  批，基础模型请求约
-                  {{ Math.ceil(workspace.fields.length / (systemStatus?.fields_per_batch || 30)) * 2 + 1 }}
-                  次（含一次全合同覆盖检查，格式重试另计）。也可以直接人工填写。
-                </p>
                 <div v-if="workspace.coverage_gaps?.length" class="review-issue">
                   <strong>
                     完整纪要中还有 {{ workspace.coverage_gaps.length }} 项需要核对，不能只看已填字段
@@ -648,31 +562,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
                     仅重试失败批次（跳过已人工审核字段）
                   </button>
                 </div>
-                <div v-if="workspace.fields.length" class="review-progress">
-                  <span :style="{ width: `${(reviewedCount / workspace.fields.length) * 100}%` }" />
-                </div>
-                <div v-if="workspace.fields.length" class="inline-actions">
-                  <span class="muted">{{ reviewedCount }} / {{ workspace.fields.length }} 项已审核</span>
-                  <button class="secondary" @click="activeTab = 'preview'">查看合同预览 →</button>
-                </div>
-              </div>
-              <div v-if="workspace.fields.length" class="review-stat-strip" aria-label="审核概览">
-                <span>
-                  <strong>{{ fieldCounts.filled }}</strong>
-                  项有值待核对
-                </span>
-                <span>
-                  <strong>{{ fieldCounts.missing }}</strong>
-                  项待补充或判断留空
-                </span>
-                <span>
-                  <strong>{{ fieldCounts.conflict }}</strong>
-                  项有分歧或依据待核验
-                </span>
-                <span>
-                  <strong>{{ reviewedCount }}</strong>
-                  项已审核
-                </span>
               </div>
               <FieldReviewPanel
                 v-if="workspace.fields.length"

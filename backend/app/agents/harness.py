@@ -144,6 +144,13 @@ class ContractHarness:
                 self.snapshot["token_usage"][key] = self.snapshot["token_usage"].get(key, 0) + value
         self.flush()
 
+    def record_response(self, diagnostics):
+        """Attach numeric response statistics to its concurrent step, never raw content."""
+        step = current_step.get()
+        if step is not None:
+            step.setdefault("responses", []).append(dict(diagnostics))
+            self.flush()
+
     def record_summary(self, summary):
         """将结构校验后的简短结论关联到当前步骤，不记录完整推理过程。
 

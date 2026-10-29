@@ -158,6 +158,39 @@ describe('field review', () => {
     wrapper.unmount()
   })
 
+  it('shows saving and saved states, disables duplicate submissions and re-enables changed fields', async () => {
+    const fields = [makeField('公司', '甲公司')]
+    const wrapper = mount(FieldReviewPanel, { props: { fields } })
+    /** Read the current per-field action after each state update. */
+    const button = () => wrapper.find('.field-decision button')
+    await button().trigger('click')
+    await wrapper.setProps({ busy: true })
+    expect(button().text()).toBe('正在保存…')
+    await wrapper.setProps({ fields: [{ ...fields[0], status: 'confirmed' }] })
+    await wrapper.setProps({ busy: false })
+    expect(button().text()).toBe('已保存 · 已确认')
+    expect(button().attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[role="status"]').text()).toContain('已保存 1 项')
+    await wrapper.find('textarea').setValue('乙公司')
+    expect(button().attributes('disabled')).toBeUndefined()
+    expect(button().text()).toBe('保存并确认')
+    wrapper.unmount()
+  })
+
+  it('does not claim success after a failed save and recognizes already omitted fields', async () => {
+    const fields = [{ ...makeField('签字', ''), status: 'omitted', user_note: '线下签署' }]
+    const wrapper = mount(FieldReviewPanel, { props: { fields } })
+    expect(wrapper.find('.field-decision button').text()).toBe('已保存 · 保留空白')
+    expect(wrapper.find('.field-decision button').attributes('disabled')).toBeDefined()
+    await wrapper.find('.field-decision input:not([type=checkbox])').setValue('待补充')
+    await wrapper.find('.field-decision button').trigger('click')
+    await wrapper.setProps({ busy: true })
+    await wrapper.setProps({ busy: false })
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('.field-decision button').text()).toBe('确认保留空白')
+    wrapper.unmount()
+  })
+
   it('lets users locate the exact original evidence', async () => {
     const wrapper = mount(FieldReviewPanel, { props: { fields: [makeField('甲方', '公司')] } })
     await wrapper.find('blockquote button').trigger('click')

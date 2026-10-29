@@ -4,22 +4,22 @@ import { describe, expect, it } from 'vitest'
 import ContractPreviewPanel from '../components/ContractPreviewPanel.vue'
 
 describe('contract preview gate', () => {
-  it('explains an all-blank review without claiming zero pending items blocks it', () => {
+  it('previews and exports explicitly omitted blanks as a draft, including legacy tasks', async () => {
     const wrapper = mount(ContractPreviewPanel, {
       props: {
-        workspace: {
-          stage: 'field_review',
-          revision: 1,
-          fields: [{ status: 'omitted', value: '' }],
-          selected_template: { id: 'one' },
-          artifacts: [],
-        },
+        workspace: { stage: 'field_review', revision: 1,
+          fields: [{ status: 'omitted', value: '' }], selected_template: { id: 'one' }, artifacts: [] },
+        preview: { revision: 1, text: '甲方：____', omitted_fields: ['甲方'] },
       },
     })
-    expect(wrapper.text()).toContain('所有字段都已保留空白')
-    expect(wrapper.text()).toContain('至少填写并确认一项')
-    expect(wrapper.text()).not.toContain('0 项待确认')
-    expect(wrapper.find('input[type=checkbox]').exists()).toBe(false)
+    expect(wrapper.find('.contract-paper').text()).toContain('甲方')
+    expect(wrapper.text()).not.toContain('至少填写')
+    expect(wrapper.text()).not.toContain('还不能导出')
+    expect(wrapper.find('.generate-button').text()).toContain('草稿')
+    await wrapper.find('input[type=checkbox]').setValue(true)
+    expect(wrapper.find('.generate-button').attributes('disabled')).toBeUndefined()
+    await wrapper.find('.generate-button').trigger('click')
+    expect(wrapper.emitted('generate')).toHaveLength(1)
     wrapper.unmount()
   })
   it('explains unsaved changes and prevents acknowledging an outdated preview', () => {
@@ -38,7 +38,7 @@ describe('contract preview gate', () => {
     })
     expect(wrapper.text()).toContain('审核修改尚未保存')
     expect(wrapper.find('.contract-paper').exists()).toBe(false)
-    expect(wrapper.find('.generate-button').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.generate-button').exists()).toBe(false)
     wrapper.unmount()
   })
   it('never exposes internal placeholders before review and guides back to review', async () => {
@@ -115,7 +115,7 @@ describe('contract preview gate', () => {
     const wrapper = mount(ContractPreviewPanel, {
       props: { workspace, preview: { revision: 4, text: '合同预览', omitted_fields: [] } },
     })
-    expect(wrapper.find('.generate-button').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.generate-button').exists()).toBe(false)
     await wrapper.setProps({ workspace: { ...workspace, stage: 'ready_to_generate' } })
     await wrapper.find('input[type=checkbox]').setValue(true)
     expect(wrapper.find('.generate-button').attributes('disabled')).toBeUndefined()

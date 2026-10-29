@@ -49,11 +49,12 @@ class Settings(BaseSettings):
     harness_timeout_seconds: float = Field(3600, ge=10, le=14400)
     harness_max_input_chars: int = Field(500000, ge=10000, le=2000000)
     llm_max_tokens: int = Field(8192, ge=256, le=131072)
+    llm_recovery_max_tokens: int = Field(32768, ge=0, le=131072)
     llm_temperature: float = Field(0.2, ge=0, le=2)
     structured_output_retries: int = Field(1, ge=0, le=2)
     max_source_chars: int = Field(60000, ge=1000, le=300000)
     max_upload_bytes: int = Field(5 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
-    fields_per_batch: int = Field(30, ge=5, le=80)
+    fields_per_batch: int = Field(10, ge=1, le=80)
     # 并发数决定同时处理的字段批次；不表示模型副本或独立基础模型数量。
     agent_parallelism: int = Field(2, ge=1, le=4)
     supervisor_max_searches: int = Field(3, ge=1, le=5)

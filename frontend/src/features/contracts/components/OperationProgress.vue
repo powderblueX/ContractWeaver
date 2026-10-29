@@ -115,6 +115,11 @@ const actionLabels = {
         <p v-else class="small-note">
           {{ step.status === 'running' ? '等待本步骤返回结果' : '此步骤未提供模型决策摘要' }}
         </p>
+        <p v-for="(response, index) in step.responses || []" :key="index" class="small-note">
+          请求 {{ index + 1 }}：输出上限 {{ response.requested_max_tokens }} · 结束原因 {{ response.finish_reason }} ·
+          输入 {{ response.prompt_tokens ?? '未报告' }} / 输出 {{ response.completion_tokens ?? '未报告' }} Token ·
+          思考 {{ response.reasoning_tokens ?? '未报告' }} Token · 正文 {{ response.answer_chars }} 字符
+        </p>
         <div v-if="step.error_type" class="review-issue">
           <p>{{ step.error?.message || '此步骤未完成，可重试或继续人工填写。' }}</p>
           <p v-if="step.error?.hint">{{ step.error.hint }}</p>
